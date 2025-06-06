@@ -1,0 +1,4 @@
+include "/etc/named/rndc.key";
+include "/etc/named/conf.acls";
+include "/etc/named/conf.options";
+include "/etc/named/conf.local";

@@ -1,0 +1,46 @@
+version: 0.1
+log:
+  accesslog:
+    disabled: false
+  level: debug
+  formatter: text
+  fields:
+    service: registry
+storage:
+  s3:
+    accesskey:  
+    secretkey: 
+    region:
+    regionendpoint: https://s3-endpoint
+    forcepathstyle: true
+    accelerate: false
+    bucket: registry
+    encrypt: false
+    secure: false
+    v4auth: false
+    chunksize: 5242880
+    rootdirectory: /
+    multipartcopychunksize: 33554432
+    multipartcopymaxconcurrency: 10000
+    multipartcopythresholdsize: 33554432
+    loglevel: debug
+  delete:
+    enabled: true
+  redirect:
+    disable: true
+  cache:
+    blobdescriptor: inmemory
+    blobdescriptorsize: 10000
+  maintenance:
+    uploadpurging:
+      enabled: true
+      age: 168h
+      interval: 24h
+      dryrun: false
+    readonly:
+      enabled: false
+http:
+  addr: localhost:5000
+  secret: 
+  headers:
+    X-Content-Type-Options: [nosniff]

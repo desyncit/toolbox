@@ -1,0 +1,8 @@
+FROM  docker.io/archlinux/archlinux:latest
+RUN   pacman -Sy --noconfirm bind 
+COPY  --chown=named etc-named/ /etc/named
+COPY  --chown=named etc-named/rndc.key /etc/rndc.key
+COPY  --chown=named var-named-zones/ /var/named/
+COPY  --chmod=0755  entrypoint.sh /bin/entrypoint.sh
+RUN   ln -sf /etc/named/conf /etc/named.conf
+ENTRYPOINT ["/bin/entrypoint.sh"]

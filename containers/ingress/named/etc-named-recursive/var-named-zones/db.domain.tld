@@ -1,0 +1,38 @@
+$ORIGIN .
+$TTL    3600
+domain.tld       IN      SOA     ns1.domain.tld. hostmaster.domain.tld. (
+                                          20240824 ; Serial
+                                          3600 ; Refresh
+                                          86400 ; Retry
+                                          86400 ; Expire
+                                          172800 ; Negative Cache TTL
+                                          )
+                          IN      NS      ns1.domain.tld.
+$ORIGIN domain.tld.
+$TTL    3600 
+ns1                       IN      A      x.x.x.x
+                          IN      A      x.x.x.x
+                          IN      A      x.x.x.x
+
+api                       IN      A      x.x.x.x
+                          IN      A      x.x.x.x
+                          IN      A      x.x.x.x
+
+api-int                   IN      A      x.x.x.x
+                          IN      A      x.x.x.x
+                          IN      A      x.x.x.x
+
+*.apps                    IN      A      x.x.x.x
+                          IN      A      x.x.x.x
+                          IN      A      x.x.x.x
+
+cloud                     IN      A      x.x.x.x
+                          IN      A      x.x.x.x
+			  IN      A      x.x.x.x
+
+bootstrap                 IN      A      x.x.x.x
+
+control-01                IN      A      x.x.x.x
+
+compute01                 IN      A      x.x.x.x
+compute02                 IN      A      x.x.x.x

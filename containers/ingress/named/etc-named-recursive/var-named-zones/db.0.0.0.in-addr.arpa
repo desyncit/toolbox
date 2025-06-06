@@ -1,0 +1,27 @@
+$ORIGIN .
+$TTL    3600
+0.0.0.in-addr.arpa         IN      SOA     ns1.domain.tld. hostmaster.domain.tld. (
+                                            20240824 ; Serial
+                                            3600     ; Refresh
+                                            86400    ; Retry
+                                            86400    ; Expire
+                                            172800   ; Negative Cache TTL
+)
+       IN     NS               ns1.domain.tld.
+
+$ORIGIN 0.0.0.in-addr.arpa.
+$TTL    3600
+00    IN    PTR                ns1.domain.tld.
+
+00    IN    PTR                api.domain.tld.
+
+00    IN    PTR            api-int.domain.tld.
+
+00    IN    PTR              cloud.domain.tld.
+
+00    IN    PTR          bootstrap.domain.tld.
+
+00    IN    PTR         control-01.domain.tld.
+
+00    IN    PTR         compute-01.domain.tld.
+

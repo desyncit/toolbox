@@ -1,0 +1,31 @@
+zone "." IN {
+    type hint;
+    file "/var/named/db.root.";
+};
+
+zone "localhost" IN {
+  type master;
+  file "/var/named/db.localhost.";
+};
+
+zone "db.0.0.127.in-addr.arpa" IN {
+     type master;
+     file "/var/named/db.0.0.127.in-addr.arpa.";
+};
+
+zone "domain.tld" IN {
+   type forward;
+   forwarders { 127.0.0.1; };
+};
+
+zone "domain.tld" IN {
+   type master;
+   allow-query { rfc1918; };
+   file "/var/named/db.domain.tld";
+};
+
+zone "0.0.0.in-addr.arpa" IN {
+   type master;
+   allow-query { rfc1918; };
+   file "/var/named/db.0.0.0.in-addr.arpa";
+};

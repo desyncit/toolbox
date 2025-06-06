@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  labels:
+    app: ingress
+  name: ingress
+spec:
+  containers:
+  - args: 
+    - /entrypoint.sh
+    name: named
+    image: localhost:5000/ingress/named:latest
+  - args: 
+    - /etc/distribution/config.yml
+    name: regd
+    image: localhost:5000/ingress/regd:latest 
+  hostNetwork: true
+  restartPolicy: Always

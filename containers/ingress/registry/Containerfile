@@ -1,0 +1,4 @@
+FROM docker.io/library/registry
+COPY config/config.yml          /etc/distribution/config.yml
+COPY config/config.yml          /etc/docker/registry/config.yml
+COPY config/daemon.json         /etc/docker/registry/daemon.json
