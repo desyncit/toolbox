@@ -1,0 +1,15 @@
+#!/usr/bin/stap
+# Usage : stap addip.stp
+# Tells you which process added an IP address to an interface
+# TODO: Add IPv6
+
+global AF_INET = 2;
+#global AF_INET6 = 10;
+
+probe begin { printf ("Probing started...\n") }
+probe end { printf("Probing stopped.\n") }
+
+probe kernel.function("__inet_insert_ifa").call {
+        printf("%s: IPv4 address %s added to device %s by process %s(%d) parent %s(%d).\n", ctime(gettimeofday_s()), format_ipaddr($ifa->ifa_address, AF_INET), kernel_string($ifa->ifa_dev->dev->name), execname(), pid(), pexecname(), ppid())
+}
+

@@ -1,0 +1,77 @@
+===================================================
+Below is an example use cases or a proof of concept, please consult documentation (i.e man nm-settings, policyrouting.org, etc)
+I am providing the below asexamples, not production level ready examples. Through testing should be done before implementing any 
+of the below to ensure proper compatibility with your design.
+
+Policy based routing on a host should really be a last resort, as it can become a night mare to deal with.
+
+MAINTAINER: jherron@redhat.com
+===================================================
+
+/*create the interfaces and assign static addresses*/
+#] nmcli con add type ethernet con-name eth0 ifname eth0
+#] nmcli con add type ethernet con-name eth1 ifname eth1
+
+#] nmcli con mod eth0 ip4 <ip-addresss/prefix> gw4 <ip-addresss>
+#] nmcli con mod eth1 ip4 <ip-addresss/prefix> gw4 <ip-addresss>
+#] nmcli con mod eth1 ipv4.route-table N
+
+/* Create policy based routing rules 
+ * Below the character N is used as a placeholder 
+ * Implying number value or integer 
+ *
+ * Also if multiple nics are present on the target host
+ * at least one interface needs to remain in the main
+ * route table ie table 255, see /etc/iproute2/rt_table
+ * for a list of reserved route tables. 
+ * 
+ * Below we only need to bind eth1 to a seperate route table
+ */
+
+/* 
+ * Bind eth1 to seperate route table
+ */
+
+#] nmcli con mod eth1 ipv4.route-table=<N> 
+
+/* Rules 
+ * All traffic coming into eth1 look at table N
+ * 
+ */
+
+#] nmcli con mod eth1 ipv4.routing-rules  'priority N from <ip-addresss> iif eth1 table N'
+
+/* All traffic coming from subnet <NETWORK/PREFIX> look at table N*/
+#] nmcli con mod eth1 +ipv4.routing-rules 'priority N from <ip-addresss> table N'
+
+/*All traffic going to subnet <NETWORK/PREFIX> look at table N*/
+#] nmcli con mod eth1 +ipv4.routing-rules 'priority N to <ip-addresss> table N'
+
+Once this is done the route tables look like below
+
+#] ip route
+default via <ip-addresss> dev eth0 proto static metric 100
+default via <ip-addresss> dev eth1 proto static metric 101
+<NETWORK/PREFIX> dev eth0 proto kernel scope link src <ip-addresss> metric 100 
+<NETWORK/PREFIX> dev eth1 proto kernel scope link src <ip-addresss> metric 101 
+
+Then reset the interface via 
+#] nmcli con up eth1
+
+or
+
+#] nmcli con down eth1; nmcli con up eth1 
+
+or
+
+#] nmcli device reapply eth1
+
+/*Then verify route tables like below:*/
+
+#] ip route show table main
+default via <ip-addresss> dev eth0 proto static metric 100 
+<NETWORK/PREFIX> dev eth0 proto kernel scope link src <ip-addresss> metric 100 
+
+#] ip route show table 50
+default via <ip-addresss> dev eth1 proto static metric 101 
+<NETWORK/PREFIX> dev eth1 proto kernel scope link src <ip-addresss> metric 101 

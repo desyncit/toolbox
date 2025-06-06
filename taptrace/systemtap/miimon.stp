@@ -1,0 +1,24 @@
+#!/usr/bin/stap
+/* 
+ * Usage: stap -dkernel -dbonding miimon.stp
+ * Checks slave status of bonding mii monitor
+ *
+ * Return 0x4 (BMSR_LSTATUS) means link is up or guessed link is up
+ * Return 0x0 means link is down
+ * Return 0x-1 means link status check failed
+ *
+ * You might want to change to "miimon=1000" or greater to reduce the amount of reporting
+ *
+ * Probing started...
+ * Thu Apr  7 23:22:03 2016 bond_check_dev_link: slave eth2 returning 0x4
+ * Thu Apr  7 23:22:04 2016 bond_check_dev_link: slave eth2 returning 0x4
+ * Thu Apr  7 23:22:05 2016 bond_check_dev_link: slave eth2 returning 0x4
+ */
+
+probe begin { printf ("Probing started...\n") }
+probe end { printf("Probing stopped.\n") }
+
+probe module("bonding").function("bond_check_dev_link").return {
+        printf("%s %s: slave %s returning 0x%x\n", ctime(gettimeofday_s()), ppfunc(), kernel_string($slave_dev->name), $return)
+}
+

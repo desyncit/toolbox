@@ -1,0 +1,157 @@
+#!/bin/bash -x
+
+function y(){
+  declare -a yaypks
+
+  yaypks+=("cephadm") 
+  yaygit="https://aur.archlinux.org/yay.git"
+  yayuser="yay"
+
+  useradd -r -d /tmp/yay  -s /sbin/nologin -G wheel ${yayuser}
+  sudo -H -u yay /bin/bash -c 'git clone https://aur.archlinux.org/yay.git /tmp/yay && cd /tmp/yay && makepkg --noconfirm -si'
+  sudo -H -u yay /bin/bash -c "yay -Sy ${yaypks[@]}"
+
+  return 0 
+}
+
+
+function rst(){
+  local dev=/dev/sda
+  local pv=/dev/sda2
+  declare a
+	
+  umount -R /mnt
+  vgremove -y main
+  pvremove ${pv}
+
+  for i in {1..2}; do
+	parted -s ${dev} rm ${i}; 
+  done 	
+
+  wipefs -a ${dev}
+  return 0
+}
+
+function device(){
+  local dev=/dev/sda
+  
+  parted -s ${dev} print
+  parted -s ${dev} mklabel gpt
+  parted -s ${dev} mkpart EFI 1mib 1025mib
+  parted -s ${dev} mkpart main 1026mib 100%
+  parted -s ${dev} set 1 esp on
+  parted -s ${dev} set 1 boot on
+  parted -s ${dev} set 2 lvm on
+  lvm
+ return 0
+}
+function lvm(){
+  local dev=/dev/sda2
+  pvcreate ${dev}
+  vgcreate -y main ${dev}
+  lvcreate -y -n boot -L +1G main 
+  lvcreate -y -n root -l 100%FREE main
+  fs
+ return 0
+}
+
+function fs(){
+  for lv in /dev/mapper/main-{boot,root}; do
+      	mkfs -t xfs ${lv}; 
+  done
+  mkfs -t fat -F 32 /dev/sda1
+  m
+ return 0
+}
+function m(){
+  printf "mounting to /mnt\n"
+
+  mount         /dev/mapper/main-root  /mnt
+  mount --mkdir /dev/mapper/main-boot  /mnt/boot
+  mount --mkdir -o umask=007 /dev/sda1 /mnt/efi
+  strap
+ return 0
+}
+function football(){
+
+sed -i 's/#  en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/g' /mnt/etc/locale.gen
+
+arch-chroot /mnt /bin/bash<< END 
+    set -x 
+    bootctl install --esp-path /efi --boot-path /boot
+    ln -sf /usr/share/zoneinfo/America/New_York /etc/localtime
+    timedatectl set-timezone America/New_York
+    timedatectl set-ntp true
+    hwclock --systohc
+    locale-gen
+    if [[ ! -d /efi/loader/entries ]]; then
+        mkdir /efi/loader/entries
+        bootctl install --esp-path /efi --boot-path /boot
+        {
+          printf "title   Arch Linux\n"
+          printf "linux   EFI/arch/vmlinuz-linux\n"
+          printf "initrd  EFI/arch/intel-ucode.img\n"
+          printf "initrd  EFI/arch/initramfs-linux.img\n"
+          printf "options root=UUID=$(blkid -s UUID -o value /dev/mapper/main-root) rw\n"
+        } >> /efi/loader/entries/arch.conf
+    fi
+    printf "KEYMAP=us\nFONT=lat1-16\n" | tee /etc/vconsole
+    gpg --recv-key 91D7868CCD4929537CC1B9A15293D7F37A9FC00D
+    gpg --export-ssh-key 91D7868CCD4929537CC1B9A15293D7F37A9FC00D | tee ${HOME}/.ssh/authorized_keys
+    systemctl enable systemd-networkd systemd-resolved sshd
+    mkinitcpio -P linux
+    set +x
+END
+
+	return 0
+}
+function strap(){
+  declare p _etc
+  
+  p+=("base")
+  p+=("base-devel")
+  p+=("linux")
+  p+=("linux-firmware")
+  p+=("vim")
+  p+=("podman")
+  p+=("wget")
+  p+=("lvm2")
+  p+=("git")
+  p+=("rsync")
+  p+=("reflector")
+  p+=("xfsprogs")
+  p+=("intel-ucode")
+  p+=("openssh")
+
+  _etc+=("etc/initcpio/install/efiupdate")
+  _etc+=("etc/pacman.d/hooks/pkglist.hook")
+  _etc+=("etc/profile.d/include.d/aliases.include")
+  _etc+=("etc/profile.d/include.d/envars.include")
+  _etc+=("etc/profile.d/includes.sh")
+  _etc+=("etc/systemd/network/en.network")
+  _etc+=("usr/local/bin/efisync")
+  _etc+=("etc/mkinitcpio.conf")
+  _etc+=("etc/vconsole.conf")
+  _etc+=("etc/vimrc")
+  _etc+=("etc/hosts")
+  
+  for e in "${_etc[@]}"; do
+     printf "copying %s over to /mnt/%s\n" ${e} ${e}
+     rsync -avqP --mkpath ${e} /mnt/${e};
+  done
+
+  pacstrap /mnt ${p[@]};
+  printf "Generating fstab now\n"
+  genfstab -U /mnt > /mnt/etc/fstab
+
+  football
+  unset p _etc
+  return 0
+}
+function main(){
+	local f=$1
+	printf "Execing %s\n" ${f} 
+	eval "${f}"
+	return 0
+}
+main $1

@@ -1,0 +1,81 @@
+#!/usr/bin/stap -g
+# Usage : stap -g tcp-syn.stp
+# Monitor incoming TCP SYNs into LISTEN-state sockets,
+# before any decision is made about flood, cookies, backlog, etc
+#
+# Example: TCP SYN into v4 and v6 socket
+#
+# Day Mmm DD HH:MM:SS YYYY (+111111111 ns) tcp_conn_request saddr=192.168.222.2 sport=41844 daddr=192.168.222.8 dport=9001
+# Day Mmm DD HH:MM:SS YYYY (+111111111 ns) tcp_conn_request saddr=0000:0000:0000:0000:0000:0000:0000:0001 sport=39012 daddr=0000:0000:0000:0000:0000:0000:0000:0001 dport=9001
+
+global AF_INET = 2;
+global AF_INET6 = 10;
+
+%{
+#include <linux/version.h>
+#include <net/sock.h>
+#include <net/tcp.h>
+#include <net/ip.h>
+#include <linux/skbuff.h>
+#include <linux/types.h>
+#include <linux/in6.h>
+%}
+
+function get_iph_version:long (iphdr:long)
+%{ /* pure */
+    // same bitset trick as '_is_reset' in tcpmip tapset
+    struct iphdr *iph = (struct iphdr *)(long) STAP_ARG_iphdr;
+    struct iphdr iph_copy;
+    memset (((void*)&iph_copy), 0, sizeof(iph_copy));
+    kderef_buffer(((void *)&iph_copy), iph, sizeof(struct iphdr));
+    STAP_RETVALUE = iph_copy.version;
+    CATCH_DEREF_FAULT();
+%}
+
+probe begin { printf ("SYN monitoring started...\n"); }
+probe end { printf("SYN monitoring stopped.\n"); }
+
+// kernel.function("tcp_conn_request").call ... $sk:struct sock* $skb:struct sk_buff*
+probe kernel.function("tcp_conn_request").call
+{
+    now = gettimeofday_ns();
+
+    // initialise with obviously wrong values
+    saddr = "unknown";
+    daddr = "unknown";
+    sport = 99999;
+    dport = 99999;
+
+    if (($skb != 0)) {
+        try {
+            iphdr = __get_skb_iphdr($skb);
+            version = get_iph_version(iphdr);
+        } catch { };
+        if (version == 4) {
+            try {
+                daddr = format_ipaddr(__ip_skb_daddr(iphdr), AF_INET);
+                saddr = format_ipaddr(__ip_skb_saddr(iphdr), AF_INET);
+            } catch { };
+        } else if (version == 6) {
+            try {
+                iphdr = __get_skb_iphdr(@choose_defined($skb, kernel_pointer($pskb)))
+                daddr = format_ipaddr(&@cast(iphdr, "ipv6hdr", "kernel<linux/ipv6.h>")->daddr, AF_INET6);
+                saddr = format_ipaddr(&@cast(iphdr, "ipv6hdr", "kernel<linux/ipv6.h>")->saddr, AF_INET6);
+            } catch { };
+        }
+        // there used to be a check for (skb proto == 6) here. but we're in
+        // tcp code so that must be right, and there is no such field in
+        // 'struct ipv6hdr' anyway, so just do it
+        try {
+            tcphdr = __get_skb_tcphdr(@choose_defined($skb, kernel_pointer($pskb)));
+            dport = __tcp_skb_dport(tcphdr);
+            sport = __tcp_skb_sport(tcphdr);
+        } catch { };
+    }
+
+    printf ("%s (+%9d ns) %s saddr=%s sport=%d daddr=%s dport=%d\n",
+            ctime(now / 1000000000), (now % 1000000000), ppfunc(),
+            saddr, sport, daddr, dport);
+}
+
+// vim: expandtab filetype=c ts=4 sw=4 sts=4 expandtab :

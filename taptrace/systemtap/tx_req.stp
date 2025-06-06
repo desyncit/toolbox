@@ -1,0 +1,70 @@
+#!/usr/bin/stap --all-modules 
+# Logs the result of each tx request submitted
+# Usage: stap --all-modules tx_req.stp
+# To add more drivers, probe the ndo_start_xmit FP
+# Tested on: RHEL6
+
+probe begin { printf ("Probing started...\n") }
+probe end { printf("Probing stopped.\n") }
+
+global watch_sch_generic_xmit
+
+global enic_requests = 0
+global watch_enic_hard_start_xmit
+
+global virtio_net_requests = 0
+global watch_virtio_net_start_xmit
+
+/* driver took care of packet */
+global NETDEV_TX_OK     = 0x00
+
+/* driver tx path was busy*/
+global NETDEV_TX_BUSY   = 0x10
+
+/* driver tx lock was already taken */
+global NETDEV_TX_LOCKED = 0x20
+
+probe kernel.function("sch_direct_xmit").return
+{
+	watch_sch_generic_xmit[$return] ++
+}
+
+probe module("enic").function("enic_hard_start_xmit").return
+{
+	enic_requests ++
+	watch_enic_hard_start_xmit[$return] ++
+}
+
+probe module("virtio_net").function("start_xmit").return
+{
+	virtio_net_requests ++
+	watch_virtio_net_start_xmit[$return] ++
+}
+
+probe timer.sec(300)
+{
+	printf("\n===== %s =====\n", ctime(gettimeofday_s()));
+
+	printf("sch_generic_xmit\n");
+	printf(" NETDEV_TX_OK     = %d\n", watch_sch_generic_xmit[NETDEV_TX_OK]);
+	printf(" NETDEV_TX_BUSY   = %d\n", watch_sch_generic_xmit[NETDEV_TX_BUSY]);
+	printf(" NETDEV_TX_LOCKED = %d\n", watch_sch_generic_xmit[NETDEV_TX_LOCKED]);
+	delete watch_sch_generic_xmit;
+
+	if (enic_requests >= 1) {
+		printf("enic_hard_start_xmit. Total: %d\n", enic_requests);
+		printf(" NETDEV_TX_OK     = %d\n", watch_enic_hard_start_xmit[NETDEV_TX_OK]);
+		printf(" NETDEV_TX_BUSY   = %d\n", watch_enic_hard_start_xmit[NETDEV_TX_BUSY]);
+		printf(" NETDEV_TX_LOCKED = %d\n", watch_enic_hard_start_xmit[NETDEV_TX_LOCKED]);
+		delete watch_enic_hard_start_xmit
+	}
+
+	if (virtio_net_requests >= 1) {
+		printf("virtio_net_start_xmit. Total: %d\n", virtio_net_requests);
+		printf(" NETDEV_TX_OK     = %d\n", watch_virtio_net_start_xmit[NETDEV_TX_OK]);
+		printf(" NETDEV_TX_BUSY   = %d\n", watch_virtio_net_start_xmit[NETDEV_TX_BUSY]);
+		printf(" NETDEV_TX_LOCKED = %d\n", watch_virtio_net_start_xmit[NETDEV_TX_LOCKED]);
+		delete watch_virtio_net_start_xmit
+	}
+}
+

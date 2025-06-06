@@ -1,0 +1,41 @@
+#!/usr/bin/stap
+
+/*
+ * Prints a fairly accurate nanosecond timestamp of when a socket was
+ * not serviced, the idea being to debug the application to find out
+ * what it was doing in the preceeding time, to determine why it wasn't
+ * reading from its socket.
+ */
+
+probe begin { printf ("Probing started...\n") }
+probe end { printf("Probing stopped.\n") }
+
+/* Wed May 18 01:42:26 2016 (+223047717ns): tcp_prune_queue called on dport: 5016. memory pressure but no drop yet
+ */
+probe kernel.function("tcp_prune_queue")
+{
+        now = gettimeofday_ns()
+        printf("%s (+%9dns): %s called on dport: %d. memory pressure but no drop yet\n", ctime((now / 1000000000)), (now % 1000000000), ppfunc(), inet_get_local_port($sk) )
+}
+
+/* tcp_prune_queue is optimised inline in kernel-3.10.0-327.13.1.el7.x86_64 so we cannot probe its return to check for a drop
+ * we could maybe infer from: probe kernel.function("tcp_try_rmem_schedule").return
+ * or we can probe the last line recognised as the function before return, as below
+ * if we get to this statement then we're returning -1 after incrementing RcvPruned
+ */
+probe kernel.statement("*@net/ipv4/tcp_input.c:4736")
+{
+        now = gettimeofday_ns()
+        printf("%s (+%9dns): %s dropped packets on dport: %d. socket buffer full\n", ctime((now / 1000000000)), (now % 1000000000), ppfunc(), inet_get_local_port($sk) )
+}
+
+/* Mon May 16 06:27:49 2016 (+142548529ns): tcp_v4_syn_recv_sock dropped SYN on dport: 12345
+ */
+probe kernel.function("tcp_v4_syn_recv_sock").return
+{
+        now = gettimeofday_ns()
+        if ($return == NULL) {
+                printf("%s (+%9dns): %s dropped SYN on dport: %d, listen backlog full\n", ctime((now / 1000000000)), (now % 1000000000), ppfunc(), inet_get_local_port($sk) )
+        }
+}
+

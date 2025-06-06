@@ -1,0 +1,125 @@
+~~~
+# udp_sends.stap starts here
+#
+# usage:
+#     stap -g udp_sends.stap [port number]
+#
+# prints process, pid, ppid, dport, daddr of udp traffic
+# can be filtered just on dport with the [port number] option
+#
+# https://access.redhat.com/solutions/1263073
+#
+
+%{
+#include <net/ip.h>
+#include <linux/socket.h>
+#include <net/inet_sock.h>
+%}
+
+function get_dport_sk:long(sock:long)
+%{ /* pure */
+        struct sock *sock = (struct sock *) (long) STAP_ARG_sock;
+        struct inet_sock *inet = (struct inet_sock *) inet_sk (sock);
+        if (inet != 0x0)
+           {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,33)
+/* upstream commit c720c7e8 */
+           STAP_RETVALUE = 0xFFFF & ntohs (kread(&(inet -> inet_dport)));
+#else
+           STAP_RETVALUE = 0xFFFF & ntohs (kread(&(inet -> dport)));
+#endif
+           }
+        else STAP_RETVALUE = 2;
+        CATCH_DEREF_FAULT();
+%}
+
+function get_dport_msg:long(sock:long)
+%{ /* pure */
+        struct msghdr *msg = (struct msghdr *) (long) STAP_ARG_sock;
+        if (msg != 0x0)
+          {
+          if (msg -> msg_name)
+             {
+             struct sockaddr_in *usin = (struct sockaddr_in *) (msg -> msg_name);
+             STAP_RETVALUE = 0xFFFF & ntohs (kread(&(usin -> sin_port)));
+             }
+             else STAP_RETVALUE = -1;
+           }
+        else STAP_RETVALUE = -1;
+        CATCH_DEREF_FAULT();
+%}
+
+function get_daddr_sk:long(sock:long)
+%{ /* pure */
+        struct sock *sock = (struct sock *) (long) STAP_ARG_sock;
+        struct inet_sock *inet = (struct inet_sock *) inet_sk (sock);
+        if (inet != 0x0)
+           {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,33)
+/* upstream commit c720c7e8 */
+           STAP_RETVALUE = ntohl (kread(&(inet -> inet_daddr)));
+#else
+           STAP_RETVALUE = ntohl (kread(&(inet -> daddr)));
+#endif
+           }
+        else STAP_RETVALUE = 2;
+        CATCH_DEREF_FAULT();
+%}
+
+function get_daddr_msg:long(sock:long)
+%{ /* pure */
+       struct msghdr *msg = (struct msghdr *) (long) STAP_ARG_sock;
+       struct sockaddr_in *usin = (struct sockaddr_in *) (msg -> msg_name);
+       STAP_RETVALUE = ntohl (kread(&(usin -> sin_addr.s_addr)));
+       CATCH_DEREF_FAULT();
+%}
+
+global dport
+global daddr
+global targetport = 0
+
+probe begin {
+  %( $# > 1 %?
+     log ("Usage:\n\tstap -g udp_sends.stap [port-number]\n\n\n")
+     exit()
+  %)
+  %( $# == 1 %?
+     targetport = strtol (@1, 10)
+     if (targetport == 0)
+        {
+        printf ("Cannot convert %s to a number\n\n\n",@1)
+        exit ()
+        }
+     if (targetport > 0) printf ("Matching on UDP port %d\n",targetport)
+  %:
+  if ($# == 0)
+     {
+     targetport = 0
+     print ("Matching on all UDP ports\n");
+     }
+  %)
+}
+
+probe kernel.function("udp_sendmsg").call
+{
+      dport = get_dport_msg ($msg)
+      if (dport > 0)
+         {
+         daddr = get_daddr_msg ($msg)
+         }
+      else
+         {
+         dport = get_dport_sk ($sk)
+         daddr = get_daddr_sk ($sk)
+         }
+      if ((dport == targetport) || (targetport == 0))
+         {
+         printf("%s: %s PID: %d PPID: %d sending to port %d at %d.%d.%d.%d\n",
+                ctime(gettimeofday_s()), execname(), pid(), ppid(), dport,
+                (0xFF000000 & daddr) >> 24, (0x00FF0000 & daddr) >> 16,
+                (0x0000FF00 & daddr) >> 8, (0x000000FF & daddr))
+         }
+}
+#
+# udp_sends ends here
+~~~

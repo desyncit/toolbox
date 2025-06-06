@@ -1,0 +1,14 @@
+#!/bin/bash
+case $1 in 
+
+	"redhat")
+	echo "You inputed redhat"
+	;;
+	"fedora")
+	echo "You inputed fedora"
+	;;
+	*)
+		echo "Usage: /root/inputsh redhat or fedora"
+		exit 1
+	;;
+esac

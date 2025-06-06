@@ -1,0 +1,121 @@
+#!/usr/bin/python3
+""" 
+Reports the time, PID, source IP:Port destination IP:Port and command for every UDP message sent (not received).
+Can filter on either destination Port or destination IP or both. Ranges are not allowed.
+Usage:
+  monitor-udp [Destination Port [Destination IP]]
+     use 0 for Destination Port if you want to filter on Destination IP but not port
+"""
+
+from bcc import BPF
+from time import strftime
+import sys
+
+if len(sys.argv) == 1:
+   target_dport = "0"
+   target_daddr = "0.0.0.0"
+elif len(sys.argv) == 2:
+   target_dport = sys.argv[1]
+   target_daddr = "0.0.0.0" 
+elif len(sys.argv) == 3: 
+   target_dport = sys.argv[1]
+   target_daddr = sys.argv[2]
+else:
+   print ("""Usage:
+    ./monitor-udp [destination-port [destination-IP address]]
+    a destination_port of 0 implies any destination port""")
+   sys.exit(2)
+ 
+# I am doing this here and converting it to a number because I could not get the BPF proigram to complile
+# when I included the <arpa/inet.h> file to I could call inet_addr()
+
+def convert_string_to_ip (ipaddr_str):
+    x1 = ipaddr_str.index(".")
+    o1 = int(ipaddr_str[0:x1])
+    x2 = ipaddr_str.index(".", x1+1)
+    o2 = int(ipaddr_str[x1+1:x2])
+    x3 = ipaddr_str.index(".", x2+1)
+    o3 = int(ipaddr_str[x2+1:x3])
+    o4 = int(ipaddr_str[x3+1:])
+    return (((((o4 * 256) + o3) * 256) + o2) * 256) + o1
+
+bpf_program = """
+#include <net/sock.h>  
+#include <net/inet_sock.h>  
+#include <bcc/proto.h>  
+
+struct data_t {
+   u32 daddr;
+   u32 saddr;
+   u16 dport;
+   u16 sport;
+   u32 pid;
+   char task[100];
+};
+
+BPF_PERF_OUTPUT(events);
+
+int hello(struct pt_regs *ctx, struct sock *sk, struct msghdr *msg) {
+  struct data_t data;
+  struct sockaddr_in * sin;
+  u16 target_dport;
+  u32 target_daddr;
+  sin = msg -> msg_name;
+
+  target_dport = FILTER1;
+  target_daddr = FILTER2;
+  data.dport = sk -> __sk_common.skc_dport;
+  if (data.dport == 0) data.dport = sin -> sin_port;
+  data.dport = ntohs (data.dport);
+  if (data.dport == target_dport || target_dport == 0) 
+     {
+     data.daddr = sk -> __sk_common.skc_daddr;
+     if (data.daddr == 0) data.daddr = sin -> sin_addr.s_addr;
+     if (data.daddr == target_daddr || target_daddr == 0)
+        {
+        data.saddr = sk -> __sk_common.skc_rcv_saddr;
+        data.sport = sk -> __sk_common.skc_num;
+  
+        data.pid = bpf_get_current_pid_tgid() >> 32;
+        bpf_get_current_comm(&data.task, sizeof(data.task));
+  
+        events.perf_submit (ctx, &data, sizeof(data)); 
+        }
+     }
+  return 0;
+}
+"""
+
+def convert_to_ipaddr_string (ipaddr):
+    o1 = o2 = o3 = o4 = ""
+    o4 = (ipaddr & 0xFF000000)>> 24
+    o3 = (ipaddr & 0x00FF0000) >> 16
+    o2 = (ipaddr & 0x0000FF00) >> 8
+    o1 = ipaddr & 0x000000FF
+    return ("{0}.{1}.{2}.{3}".format(o1, o2, o3, o4))
+
+def print_data(cpu, data, size):
+    event = bpf["events"].event(data)
+    print("{0} {1} {2}:{3} -> {4}:{5} {6}".format(strftime("%Y-%m-%d_%H:%M:%S UTC%z"), event.pid,
+            convert_to_ipaddr_string(event.saddr), event.sport,
+            convert_to_ipaddr_string(event.daddr), event.dport,  event.task.decode('utf-8', 'replace')))
+
+
+bpf_program = bpf_program.replace("FILTER1", target_dport)
+bpf_program = bpf_program.replace("FILTER2", str(convert_string_to_ip (target_daddr)))
+bpf = BPF(text=bpf_program)
+
+bpf.attach_kprobe(event="udp_sendmsg", fn_name="hello")
+
+print ("Monitoring UDP port " + target_dport + " at destination IP address " + target_daddr)
+print ("0's implies not filtering")
+
+bpf["events"].open_perf_buffer(print_data, page_cnt=64)
+
+while True:
+    try:
+        bpf.perf_buffer_poll ()
+    except ValueError:
+        continue
+    except KeyboardInterrupt:
+        break

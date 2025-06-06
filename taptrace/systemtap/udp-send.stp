@@ -1,0 +1,73 @@
+#!/usr/bin/stap -DMAXMAPENTRIES=32768 --all-modules
+# Used for tracking the sport/dport of a UDP sendmsg()
+# Tested on EL8
+
+global skbs;
+
+probe begin { printf ("Probing started...\n") }
+probe end { printf("Probing stopped.\n") }
+
+probe kernel.function("udp_sendmsg").call
+{
+	now = gettimeofday_ns();
+	try {
+		#family = __ip_sock_family($sk);
+		#saddr = format_ipaddr(__ip_sock_saddr($sk), family);
+		#daddr = format_ipaddr(__ip_sock_daddr($sk), family);
+		sport = __tcp_sock_sport($sk);
+		#dport = __tcp_sock_dport($sk);
+	} catch { };
+	printf("%s (+%9d ns) %s sk->sport=%d\n",
+			ctime(now / 1000000000), (now % 1000000000), ppfunc(),
+			sport);
+}
+
+probe kernel.function("udp_send_skb").call
+{
+    skbs[$skb] = 1;
+	now = gettimeofday_ns();
+
+	sport = 99999;
+	dport = 99999;
+
+	if ($skb != 0) {
+		try {
+			tcphdr = __get_skb_tcphdr(@choose_defined($skb, kernel_pointer($pskb)));
+			dport = __tcp_skb_dport(tcphdr);
+			sport = __tcp_skb_sport(tcphdr);
+		} catch { };
+	}
+	printf("  %s (+%9d ns) %s skb=0x%016x, skb->sport=%d, skb->dport=%d\n",
+			ctime(now / 1000000000), (now % 1000000000), ppfunc(),
+			$skb, sport, dport);
+}
+
+#nf_nat_manip_pkt never called
+probe kernel.function("ip_output").call,
+      kernel.function("ip_finish_output").call,
+      module("nf_tables").function("nft_do_chain_ipv4").call,
+      module("nf_nat").function("nf_nat_ipv4_out").call,
+      module("nf_conntrack").function("ipv4_confirm").call,
+      module("nf_nat").function("nf_nat_packet").call,
+      module("nf_nat").function("nf_nat_manip_pkt").call,
+      kernel.function("ip_finish_output2").call,
+      kernel.function("dev_queue_xmit").call
+{
+    if (skbs[$skb] > 0) {
+        now = gettimeofday_ns();
+        sport = 99999;
+        dport = 99999;
+        try {
+            tcphdr = __get_skb_tcphdr(@choose_defined($skb, kernel_pointer($pskb)));
+            dport = __tcp_skb_dport(tcphdr);
+            sport = __tcp_skb_sport(tcphdr);
+        } catch { };
+
+        printf("  %s (+%9d ns) %s skb=0x%016x, skb->sport=%d, skb->dport=%d\n",
+                ctime(now / 1000000000), (now % 1000000000), ppfunc(),
+                $skb, sport, dport);
+        if(strpos(ppfunc(), "dev_queue_xmit") == 0) {
+            skbs[$skb] = 0;
+        }
+    }
+}

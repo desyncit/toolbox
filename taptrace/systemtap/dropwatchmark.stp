@@ -1,0 +1,97 @@
+/*
+ * GPLv3
+ * Author: Marcelo Ricardo Leitner
+ * With contributions from:
+ *   Noah Davids
+ * May 2014
+ *
+ * Idea:
+ *  Locate where a given packet^Wskb, marked by iptables rules, is released.
+ *  With that, we possibly filter out much of the noise from dropwatch.
+ *
+ */
+
+global watching
+global clone_watch = 0
+
+probe kernel.function("tcp_v4_rcv")
+#	kernel.function("ip_local_deliver_finish")
+{
+	if ($skb->mark == 2) {
+		printf("%s: adding %p\n", pp(), $skb)
+		watching[$skb] = 1
+	}
+}
+
+probe kernel.function("skb_copy"),
+	kernel.function("skb_clone")
+{
+	if ($skb->mark == 2) {
+		printf("%s: adding %p\n", pp(), $skb)
+		clone_watch = 1
+	}
+}
+
+probe kernel.function("skb_clone").return
+{
+	if (clone_watch == 1) {
+		clone_watch = 0;
+		watching[$return] = 1
+	}
+}
+
+probe kernel.function("kfree_skb"),
+	kernel.function("consume_skb"),
+	kernel.function("__kfree_skb")
+{
+	if ($skb in watching) {
+		printf("---- %s ----\n", ctime (gettimeofday_s ()))
+		transport = $skb->head + $skb->transport_header
+		network = $skb->head + $skb->network_header
+		printf("head: %p data: %p transport: %p network: %p\n", $skb->head, $skb->data, transport, network)
+		/*
+		if ($skb->sk) {
+			// to be done
+		}
+		else */ if ((transport != network) /*&& (transport <= $skb->data)*/) {
+			src = ntohs(@cast($skb->head+$skb->transport_header, "tcphdr", "kernel<net/tcp.h>")->source)
+			dst = ntohs(@cast($skb->head+$skb->transport_header, "tcphdr", "kernel<net/tcp.h>")->dest)
+			seq = ntohl(@cast($skb->head+$skb->transport_header, "tcphdr", "kernel<net/tcp.h>")->seq)
+			ack = ntohl(@cast($skb->head+$skb->transport_header, "tcphdr", "kernel<net/tcp.h>")->ack_seq)
+			printf("src %d  dst %d  seq %d  ack %d\n", src, dst, seq, ack)
+		}
+		else {
+			printf("payload: ");
+			len=$skb->len
+			if (len > 100)
+				len = 100
+			for (i=0; i<64; i++) {
+				if (i % 8 == 0)
+					printf(" ");
+				printf("%2d", i);
+			}
+			for (i=0; i<len; i++) {
+				if (i % 64 == 0)
+					printf("\n ");
+				else if (i % 8 == 0)
+					printf(" ");
+				printf("%02x", $skb->data[i]);
+			}
+			printf("\n")
+		}
+		printf("\n")
+		print_backtrace()
+		print_ubacktrace()
+		printf("ref: %d  %s----\n", $skb->users->counter, execname());
+		users = $skb->users->counter
+		if ( users == 1 ) {
+			delete watching[$skb]
+		}
+	}
+}
+
+probe begin
+{
+   printf ("Probe started.\n")
+}
+

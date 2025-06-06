@@ -1,0 +1,12 @@
+#!/bin/bash
+#  vars
+. /etc/initcpio/install/efiupdate
+
+if [[ $1 -gt 0 ]]; then
+        while [[ -e /proc/"$1" ]]; do
+                sleep 0.5
+        done
+fi
+
+logger "Syncing ESP files"
+/usr/bin/rsync -avP --mkpath /boot/ "${ESP_DIR}"

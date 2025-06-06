@@ -1,0 +1,45 @@
+#!/usr/bin/stap
+
+/**
+ * socket.stp
+ * prints out userspace pids opening sockets
+ * 
+ * you may be able to correspond the socket open with a packet tranmission
+ * as this is accurate to the millisecond
+ * 
+ * sock_sendmsg
+ * time: Thu Jun  5 14:36:17 2014 EST (1401942977120 ms)
+ * process: arping(21324)
+ * proto: IP(0)
+ * size: 28
+ * type: 2
+ * family: PACKET(17)
+ */
+
+probe begin {
+  printf("Monitoring ARP...\n")
+}
+
+probe end {
+  printf("Stopping ARP.\n")
+}
+
+probe socket.sendmsg {
+        printf( "\nsock_sendmsg\n time: %s (%d ms)\n process: %s(%d)\n proto: %s(%d)\n size: %d\n type: %d\n family: %s(%d)\n", tz_ctime(gettimeofday_s()), gettimeofday_ms(), execname(), pid(), sock_prot_num2str(protocol), protocol, size, type, sock_fam_num2str(family), family )
+}
+
+/**
+ * there is no function in the socket tapset to resolve socket type
+ * here is the list of socket types from include/linux/net.h
+ * 
+ * enum sock_type - Socket types
+ * @SOCK_STREAM: stream (connection) socket
+ * @SOCK_DGRAM: datagram (conn.less) socket
+ * @SOCK_RAW: raw socket
+ * @SOCK_RDM: reliably-delivered message
+ * @SOCK_SEQPACKET: sequential packet socket
+ * @SOCK_DCCP: Datagram Congestion Control Protocol socket
+ * @SOCK_PACKET: linux specific way of getting packets at the dev level.
+ *                For writing rarp and other similar things on the user level.
+ */
+

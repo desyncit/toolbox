@@ -1,0 +1,10 @@
+#!/bin/bash
+
+# simple file reading (non-binary) and displaying one line at a time
+
+echo "Please enter a file I can read"
+read FILE
+
+while read -r USERS; do
+   echo "user names: $USERS"
+done < "$FILE"

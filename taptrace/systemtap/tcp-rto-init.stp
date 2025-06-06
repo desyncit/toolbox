@@ -1,0 +1,62 @@
+#!/usr/bin/stap
+# Monitors socket retransmission timeout (RTO)
+
+%{
+#include <linux/version.h>
+#include <net/sock.h>
+#include <net/tcp.h>
+#include <net/ip.h>
+#include <linux/skbuff.h>
+%}
+
+// function tcp_get_info_rto:long(sock:long)
+function tcp_set_info_rto:long(sock:long, val:long)
+%{ /* pure */
+	 struct sock *sk = (struct sock *)(long) STAP_ARG_sock;
+	const struct inet_connection_sock *icsk = inet_csk(sk);
+	kwrite(&(icsk->icsk_rto), STAP_ARG_val);
+	STAP_RETVALUE = (int64_t) jiffies_to_msecs(kread(&(icsk->icsk_rto)));
+	CATCH_DEREF_FAULT();
+%}
+
+function tcp_get_info_rto:long(sock:long, val:long)
+%{ /* pure */
+	 struct sock *sk = (struct sock *)(long) STAP_ARG_sock;
+	const struct inet_connection_sock *icsk = inet_csk(sk);
+	STAP_RETVALUE = (int64_t) jiffies_to_msecs(kread(&(icsk->icsk_rto)));
+	CATCH_DEREF_FAULT();
+%}
+
+probe begin {
+
+    printf ("Probing started...\n")
+    }
+
+probe end { printf("Probing stopped.\n") }
+
+probe kernel.function("tcp_v4_init_sock").return {
+
+    printf("\n");
+    printf("%lu PID:%d icsk_rto=%d\n", gettimeofday_ns(), pid(), tcp_set_info_rto($sk, 1))
+    printf("\n");
+}
+
+probe kernel.function("tcp_connect").return {
+
+    printf("\n");
+    printf("%lu PID:%d icsk_rto=%d\n", gettimeofday_ns(), pid(), tcp_set_info_rto($sk, 1))
+    printf("%lu PID:%d icsk_rto=%d\n", gettimeofday_ns(), pid(), tcp_get_info_rto($sk, 1))
+    printf("\n");
+}
+probe kernel.function("tcp_create_openreq_child").return {
+
+    printf("\n");
+    printf("%lu PID:%d icsk_rto=%d\n", gettimeofday_ns(), pid(), tcp_get_info_rto($sk, 1))
+    printf("\n");
+}
+probe kernel.function("tcp_init_metrics").return {
+
+    printf("\n");
+    printf("%lu PID:%d icsk_rto=%d\n", gettimeofday_ns(), pid(), tcp_set_info_rto($sk, 1))
+    printf("\n");
+}

@@ -1,0 +1,18 @@
+#!/usr/bin/stap --all-modules
+# Usage: stap --all-modules qeth-recovery.stp
+# Determines why the qeth recovery process has been started, hopefully
+# providing useful information for IBM to investigate device failures.
+
+probe begin { printf ("Probing started...\n") }
+probe end { printf("Probing stopped.\n") }
+
+probe module("qeth").function("qeth_schedule_recovery").call {
+    now = gettimeofday_ns();
+
+    printf ("%s (+%9d ns) %s called\n",
+            ctime(now / 1000000000), (now % 1000000000), ppfunc());
+    print_backtrace();
+}
+
+# vim: expandtab filetype=c ts=4 sw=4 sts=4 expandtab :
+

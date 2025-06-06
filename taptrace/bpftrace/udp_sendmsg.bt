@@ -1,0 +1,51 @@
+#include <net/sock.h>
+
+BEGIN
+{
+if ( $1 &&  $1 > 65535) {
+                printf("Port number invalid.... so exiting... please try with valid port range 1-65535");
+                exit();
+}
+}
+
+kprobe:udp_sendmsg,
+kprobe:udpv6_sendmsg
+{
+        $sk = (struct sock *)arg0;
+        $inet_family = $sk->__sk_common.skc_family;
+        $task = (struct task_struct *)curtask;
+
+        if ($inet_family == AF_INET || $inet_family == AF_INET6) {
+                // initialize variable type:
+                $daddr = ntop(0);
+                $saddr = ntop(0);
+                if ($inet_family == AF_INET) {
+                        $daddr = ntop($sk->__sk_common.skc_daddr);
+                        $saddr = ntop($sk->__sk_common.skc_rcv_saddr);
+                } else {
+                        $daddr = ntop(
+                            $sk->__sk_common.skc_v6_daddr.in6_u.u6_addr8);
+                        $saddr = ntop(
+                            $sk->__sk_common.skc_v6_rcv_saddr.in6_u.u6_addr8);
+                }
+                $lport = $sk->__sk_common.skc_num;
+                $dport = $sk->__sk_common.skc_dport;
+
+                // Destination port is big endian, it must be flipped
+                $dport = ($dport >> 8) | (($dport << 8) & 0x00FF00);
+
+                if (!$1) 
+                {
+                   time("%Y-%m-%d %H:%M:%S ");
+                   printf("PID:%d COMMAND:%s PPID:%d PCOMM:%s LADDR:%-14s LPORT:%-6d RADDR:%-14s RPORT:%-6d\n", pid,comm,
+                   $task->real_parent->pid,$task->real_parent->comm,$saddr, $lport,$daddr,$dport);
+                } else {
+                          $port = $1;
+                          if ($dport ==  (uint16)$port) {
+                          time("%Y-%m-%d %H:%M:%S ");
+                          printf("PID:%d COMMAND:%s PPID:%d PCOMM:%s LADDR:%-14s LPORT:%-6d RADDR:%-14s RPORT:%-6d\n", 
+                          pid,comm, $task->real_parent->pid,$task->real_parent->comm,$saddr, $lport,$daddr,$dport);
+                              } 
+                        }              
+        }
+}

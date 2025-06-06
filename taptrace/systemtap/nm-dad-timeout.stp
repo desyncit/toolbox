@@ -1,0 +1,48 @@
+#!/usr/bin/stap
+# NetworkManager DAD debugging
+# Usage: stap nm-dad-timeout.stp
+#
+# This isn't particluarly clear, but shows that NM does not perform IPv4 DAD by default.
+# Put an IPv4 connection up to get the probes to fire.
+
+probe begin { printf ("Probing started...\n") }
+probe end { printf("Probing stopped.\n") }
+
+probe process("/usr/sbin/NetworkManager").function("ipv4_dad_start")
+{
+	printf("%s started\n", ppfunc());
+}
+
+// get_ipv4_dad_timeout is optimised inline
+// nm_config_data_get_connection_default_int64 returning 0 / 30000
+probe process("/usr/sbin/NetworkManager").function("nm_config_data_get_connection_default_int64").return
+{
+	printf("%s returning %d / %d\n", ppfunc(), $return, $max);
+}
+
+probe process("/usr/sbin/NetworkManager").function("nm_setting_ip_config_get_dad_timeout").return
+{
+	printf("%s returning %d\n", ppfunc(), $return)
+}
+
+probe process("/usr/sbin/NetworkManager").statement("*@src/devices/nm-device.c:6952")
+{
+	printf("nm-device.c:6952 addr_found=%d hwaddr_add=%d length=%d\n", $addr_found, $hwaddr_arr, $length);
+}
+
+probe process("/usr/sbin/NetworkManager").statement("*@src/devices/nm-device.c:6956")
+{
+	printf("nm-device.c:6956 returning early\n");
+}
+
+/* DAD performed by */
+probe process("/usr/sbin/NetworkManager").function("nm_acd_manager_start_probe")
+{
+	printf("%s started with timeout %d\n", ppfunc(), $timeout);
+}
+
+probe process("/usr/sbin/NetworkManager").function("nm_acd_manager_new")
+{
+	printf("%s started with callback %08x (NULL == announce only)\n", ppfunc(), $callbacks);
+}
+

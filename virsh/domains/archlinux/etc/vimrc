@@ -1,0 +1,12 @@
+runtime! archlinux.vim
+
+
+autocmd FileType yaml setlocal ai ts=2 sts=2 sw=2 et
+
+let skip_defaults_vim=1
+
+syntax on
+set background=dark
+set nobackup
+set nowb
+set noswapfile

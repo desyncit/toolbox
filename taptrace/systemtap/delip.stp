@@ -1,0 +1,18 @@
+#!/usr/bin/stap
+# Usage : stap delip.stp
+# Tells you which process deleted an IP address from an interface
+
+global AF_INET = 2;
+global AF_INET6 = 10;
+
+probe begin { printf ("Probing started...\n") }
+probe end { printf("Probing stopped.\n") }
+
+probe kernel.function("__inet_del_ifa").call {
+        printf("%s: %s(%d) deleting IPv4 address %s from device %s\n", ctime(gettimeofday_s()), execname(), pid(), format_ipaddr($ifap->ifa_address, AF_INET), kernel_string($in_dev->dev->name))
+}
+
+probe module("ipv6").function("inet6_addr_del").return {
+        printf("%s: %s(%d) deleting IPv6 address %s from device index %d\n", ctime(gettimeofday_s()), execname(), pid(), format_ipaddr($pfx, AF_INET6), $ifindex) /*, kernel_string($idev->dev->name)) */
+}
+

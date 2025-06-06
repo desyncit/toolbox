@@ -1,0 +1,88 @@
+#!/bin/env stap
+/*
+ * systemtap ping monitor
+ * matches echo request/replies per (src,dst,echo id) and displays
+ * time delta between echo -> reply -> echo
+ *
+ * sample output:
+ * Started.
+ * icmp: 192.168.254.1 -> 192.168.254.19 (Echo request id 17467 seq 1): 0ns
+ * icmp: 192.168.254.19 -> 192.168.254.1 (Echo reply   id 17467 seq 1): 55148ns
+ * icmp: 192.168.254.1 -> 192.168.254.19 (Echo request id 17467 seq 2): 1000083637ns
+ * icmp: 192.168.254.19 -> 192.168.254.1 (Echo reply   id 17467 seq 2): 28285ns
+ * icmp: 192.168.254.1 -> 192.168.254.19 (Echo request id 17467 seq 3): 999974828ns
+ * icmp: 192.168.254.19 -> 192.168.254.1 (Echo reply   id 17467 seq 3): 40337ns
+ *
+ * Author: Marcelo Ricardo Leitner - May 2014
+ * License: GPLv3
+ *
+ * Tested only under RHEL5 yet, sorry.
+ */
+
+global ts
+global AF_INET = 2
+
+function icmp(skb) {
+	mac = @cast(skb, "struct sk_buff")->mac->raw
+	if (!mac)
+		mac = @cast(skb, "struct sk_buff")->data
+
+	protocol = @cast(mac, "struct ethhdr")->h_proto
+	protocol = ntohs(protocol)
+	iphdr = mac+14
+	if (protocol == 0x8100) {  # vlan
+		# We can offset the entire structure, no problem because we don't
+		# use the other fields
+		protocol = @cast(mac+4, "struct ethhdr")->h_proto
+		protocol = ntohs(protocol)
+		iphdr += 4
+	}
+
+        if (protocol != 0x0800)
+		return 0
+
+	ipproto = @cast(iphdr, "struct iphdr")->protocol
+	if (ipproto != 1)
+		return 0
+
+	# fetch ip info
+	src = @cast(iphdr, "struct iphdr")->saddr
+	dst = @cast(iphdr, "struct iphdr")->daddr
+
+	# fetch icmp info
+	id = ntohs(@cast(iphdr+20, "struct icmphdr")->un->echo->id)
+	seq = ntohs(@cast(iphdr+20, "struct icmphdr")->un->echo->sequence)
+	type = @cast(iphdr+20, "struct icmphdr")->type
+	if (type == 0) {
+		op = "Echo reply  "
+		other = 8
+	}
+	else {
+		op = "Echo request"
+		other = 0
+	}
+
+	now = gettimeofday_ns()
+	ts[src, dst, id, type] = now
+	last = ts[dst, src, id, other]
+	if (!last)
+		last = now
+
+	printf("icmp: %s -> %s (%s id %d seq %d): %dns\n",
+		format_ipaddr(src, AF_INET), format_ipaddr(dst, AF_INET),
+		op, id, seq, now-last)
+}
+
+probe netdev.hard_transmit {
+	icmp($skb)
+}
+
+#probe netdev.receive {
+probe kernel.function("netif_receive_skb") {
+	icmp($skb)
+}
+
+probe begin {
+	printf("Started.\n")
+}
+

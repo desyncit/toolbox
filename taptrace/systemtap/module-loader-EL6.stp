@@ -1,0 +1,43 @@
+#!/usr/bin/stap
+
+/**
+ * module loader
+ * 
+ * see what is causing a module to be loaded by the kernel on RHEL6
+
+# stap --all-modules module-loader.stp
+WARNING: missing unwind/symbol data for module 'uprobes'
+Monitoring request_module()...
+Thu May 22 06:15:53 2014: iptables-restor(1303)
+ 0xffffffff800a0838 : request_module+0x0/0x283 [kernel]
+ 0xffffffff884175a4 : get_info+0x8b/0x19c [ip_tables]
+ 0xffffffff88417e11 : do_ipt_get_ctl+0x5a/0x359 [ip_tables]
+ 0xffffffff80254541 : nf_sockopt+0x7c/0x10c [kernel]
+ 0xffffffff8025c541 : ip_getsockopt+0x6c/0x95 [kernel]
+ 0xffffffff80232516 : sys_getsockopt+0x7d/0xa1 [kernel]
+ 0xffffffff8005d29e : tracesys+0xd5/0xdf [kernel]
+ 0x0 (inexact)
+
+Thu May 22 06:15:53 2014: iptables-restor(1303)
+ 0xffffffff800a0838 : request_module+0x0/0x283 [kernel]
+ 0xffffffff884182d2 : translate_table+0x1c2/0x6c7 [ip_tables]
+ 0xffffffff88419600 : do_ipt_set_ctl+0xf9/0x251 [ip_tables]
+ 0xffffffff80254593 : nf_sockopt+0xce/0x10c [kernel]
+ 0xffffffff802545f2 : nf_setsockopt+0x16/0x18 [kernel]
+ 0xffffffff8025d1d6 : ip_setsockopt+0x61/0x78 [kernel]
+ 0xffffffff802325cb : sys_setsockopt+0x91/0xb7 [kernel]
+ 0xffffffff8005d29e : tracesys+0xd5/0xdf [kernel]
+ 0x0 (inexact)
+
+Stopped monitoring request_module().
+ */
+probe begin { printf("Monitoring __request_module()...\n") }
+probe end { printf("Stopped monitoring __request_module().\n") }
+
+probe kernel.function("__request_module") {
+  printf("%s: %s(%d)\n", ctime(gettimeofday_s()), execname(), pid());
+  print_backtrace();
+  printf("\n");
+}
+
+

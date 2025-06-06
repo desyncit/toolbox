@@ -1,0 +1,112 @@
+#!/usr/bin/bpftrace
+
+#include <net/sock.h>
+#include <net/ip.h>
+
+
+kprobe:tcp_reset,
+kprobe:tcp_send_active_reset
+{
+  
+  $sk = (struct sock *)arg0;
+  $inet_sock = (struct inet_sock *)arg0;
+  $inet_family = $sk->__sk_common.skc_family;
+
+  if ($inet_family == AF_INET || $inet_family == AF_INET6) {
+  // initialize variable type:
+      $daddr = ntop(0);
+      $saddr = ntop(0);
+      if ($inet_family == AF_INET) {
+          $daddr = ntop($sk->__sk_common.skc_daddr);
+          $saddr = ntop($sk->__sk_common.skc_rcv_saddr);
+               } else {
+                  $daddr = ntop($sk->__sk_common.skc_v6_daddr.in6_u.u6_addr8);
+                  $saddr = ntop($sk->__sk_common.skc_v6_rcv_saddr.in6_u.u6_addr8);
+                }
+                $sport = $inet_sock->inet_sport;
+                $dport = $sk->__sk_common.skc_dport;
+
+                // Destination port is big endian, it must be flipped
+                $sport = ($sport >> 8) | (($sport << 8) & 0x00FF00);
+                $dport = ($dport >> 8) | (($dport << 8) & 0x00FF00);
+
+  time("%Y-%m-%d %H:%M:%S ");
+  printf("PID:%d COMMAND:%s %s SADDR:%s SPORT:%d DADDR:%s DPORT:%d\n %s\n",pid,comm,func,$saddr,$sport,$daddr,$dport,kstack(5)); 
+}
+
+}
+
+kprobe:tcp_v4_send_reset,
+kprobe:tcp_v6_send_reset
+{
+  
+  $skb = (struct sk_buff *)arg1;
+  $hdr = $skb->head + $skb->network_header;
+  $iphdr = (struct iphdr *)$hdr;
+  $thdr = $skb->head + $skb->transport_header;
+  $tcphdr = (struct tcphdr *)$thdr;
+
+  $sport = $tcphdr->source;
+  $sport = ($sport >> 8) | (($sport << 8) & 0x00FF00);
+  
+  $dport = $tcphdr->dest;
+  $dport = ($dport >> 8) | (($dport << 8) & 0x00FF00);
+ 
+  
+  if($iphdr->version == 4) {
+  $saddr = ntop($iphdr->saddr);
+  $daddr = ntop($iphdr->daddr);
+  
+  time("%Y-%m-%d %H:%M:%S ");
+  printf("PID:%d COMMAND:%s %s SADDR:%s SPORT:%d DADDR:%s DPORT:%d\n %s\n",pid,comm,func,$daddr,$dport,$saddr,$sport,kstack(5)); 
+ }
+  
+ if($iphdr->version == 6) {
+  $ipv6hdr = (struct ipv6hdr *)$hdr;
+  $saddr = ntop($ipv6hdr->saddr.in6_u.u6_addr8);
+  $daddr = ntop($ipv6hdr->daddr.in6_u.u6_addr8);
+
+  time("%Y-%m-%d %H:%M:%S ");
+  printf("PID:%d COMMAND:%s %s SADDR:%s SPORT:%d DADDR:%s DPORT:%d\n %s\n",pid,comm,func,$daddr,$dport,$saddr,$sport,kstack(5)); 
+ 
+  }
+
+}
+
+kprobe:nf_send_reset,
+kprobe:nf_send_reset6
+{
+
+  $skb = (struct sk_buff *)arg2;
+  $hdr = $skb->head + $skb->network_header;
+  $iphdr = (struct iphdr *)$hdr;
+  $thdr = $skb->head + $skb->transport_header;
+  $tcphdr = (struct tcphdr *)$thdr;
+ 
+  $sport = $tcphdr->source;
+  $sport = ($sport >> 8) | (($sport << 8) & 0x00FF00);
+  
+  $dport = $tcphdr->dest;
+  $dport = ($dport >> 8) | (($dport << 8) & 0x00FF00);
+ 
+  
+  if($iphdr->version == 4) {
+  $saddr = ntop($iphdr->saddr);
+  $daddr = ntop($iphdr->daddr);
+  
+  time("%Y-%m-%d %H:%M:%S ");
+  printf("PID:%d COMMAND:%s %s SADDR:%s SPORT:%d DADDR:%s DPORT:%d\n %s\n",pid,comm,func,$daddr,$dport,$saddr,$sport,kstack(5)); 
+ }
+  
+ if($iphdr->version == 6) {
+  $ipv6hdr = (struct ipv6hdr *)$hdr;
+  $saddr = ntop($ipv6hdr->saddr.in6_u.u6_addr8);
+  $daddr = ntop($ipv6hdr->daddr.in6_u.u6_addr8);
+ 
+  time("%Y-%m-%d %H:%M:%S ");
+  printf("PID:%d COMMAND:%s %s SADDR:%s SPORT:%d DADDR:%s DPORT:%d\n %s\n",pid,comm,func,$daddr,$dport,$saddr,$sport,kstack(5)); 
+ 
+  }
+
+}
+

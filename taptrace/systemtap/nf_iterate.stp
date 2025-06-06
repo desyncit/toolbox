@@ -1,0 +1,85 @@
+#!/usr/bin/stap
+# BEGIN nf_iterate.stp
+#
+# when dropwatch returns drops in nf_hook_slow() around NF_DROP and -EPERM,
+# use this script to find the reason why NF_DROP was returned by nefilter
+#
+# ptalbert@redhat.com
+
+probe begin {
+	_NF_RESULT[0] = "NF_DROP"
+	_NF_RESULT[1] = "NF_ACCEPT"
+	_NF_RESULT[2] = "NF_STOLEN"
+	_NF_RESULT[3] = "NF_QUEUE"
+	_NF_RESULT[4] = "NF_REPEAT"
+	_NF_RESULT[5] = "NF_STOP"
+
+	_NF_CHAIN[9] = "PREROUTING"
+	_NF_CHAIN[1] = "INPUT"
+	_NF_CHAIN[2] = "FORWARD"
+	_NF_CHAIN[3] = "OUTPUT"
+	_NF_CHAIN[4] = "POSTROUTING"
+
+	printf("\nSystemTap started %s ...\n", ctime(gettimeofday_s()))
+}
+probe end { printf("SystemTap stopped %s.\n", ctime(gettimeofday_s())) }
+
+%{
+#include <linux/ip.h>
+#include <linux/skbuff.h>
+%}
+
+function get_ipid:long(skb:long)
+%{ /* pure */
+        struct iphdr *iph = ip_hdr((struct sk_buff *)STAP_ARG_skb);
+        STAP_RETURN(iph->id);
+%}
+
+function get_ipsrc:long(skb:long)
+%{ /* pure */
+        struct iphdr *iph = ip_hdr((struct sk_buff *)STAP_ARG_skb);
+        STAP_RETURN(iph->saddr);
+%}
+
+function get_ipdst:long(skb:long)
+%{ /* pure */
+        struct iphdr *iph = ip_hdr((struct sk_buff *)STAP_ARG_skb);
+        STAP_RETURN(iph->daddr);
+%}
+
+global _NF_RESULT
+global _NF_CHAIN
+
+probe kernel.statement("nf_iterate@net/netfilter/core.c:151") {
+	if (_NF_RESULT[$verdict] == "NF_DROP") {
+		time = gettimeofday_us()
+		printf("%lu.%06lu:", time/1000000, time%1000000)
+
+		ipid = ntohs(get_ipid($skb))
+		ipsrc = ip_ntop(get_ipsrc($skb))
+		ipdst = ip_ntop(get_ipdst($skb))
+		indev = "()"
+		outdev = "()"
+
+		if ($state->in) {
+			indev = kernel_string($state->in->name)
+		}
+		if ($state->out) {
+			outdev = kernel_string($state->out->name)
+		}
+
+		printf(" %s:%s:%s hook %d returned verdict: %s for %#06x %s -> %s, in: %s, out %s\n",
+			kernel_string($elemp->owner->name),
+			symname($elemp->hook),
+			_NF_CHAIN[$elemp->hooknum],
+			$state->hook,
+			_NF_RESULT[$verdict],
+			ipid,
+			ipsrc,
+			ipdst,
+			indev,
+			outdev)
+	}
+}
+
+# END nf_iterate.stp

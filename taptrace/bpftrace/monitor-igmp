@@ -1,0 +1,163 @@
+#! /usr/bin/python3
+
+
+""" 
+Reports the date, time, PID, and CMD every time a multicast group is added or dropped. Also
+Reports the date, time and group for every IGMP query received. 
+
+Example:
+  ./monitor-igmp
+  Monitoring IGMP
+  2021-01-28_18:00:07 UTC-0500 igmp_group_added called by PID: 28040 CMD: recv_multi for 239.7.5.3 on ens3
+  2021-01-28_18:00:10 UTC-0500 igmp_group_dropped called by PID: 28040 CMD: recv_multi for 239.7.5.3 on ens3
+  2021-01-28_18:00:16 UTC-0500 igmp_group_added called by PID: 28049 CMD: recv_multi for 239.7.8.3 on ens3
+  2021-01-28_18:00:18 UTC-0500 igmp_group_dropped called by PID: 28049 CMD: recv_multi for 239.7.8.3 on ens3
+  2021-01-28_18:01:38 UTC-0500 IGMP query for group 0.0.0.0 received
+  2021-01-28_18:01:38 UTC-0500 IGMP query for group 0.0.0.0 received
+  2021-01-28_18:02:57 UTC-0500 IGMP query for group 224.1.2.3 received
+  2021-01-28_18:03:07 UTC-0500 IGMP query for group 224.1.2.3 received
+
+
+Usage:
+  monitor-igmp
+     --- there are NO arguments
+
+Questions and comments can be sent to ndavids@redhat.com
+"""
+
+from bcc import BPF
+from time import strftime
+import sys
+
+if len(sys.argv) > 1:
+   print ("Usage: " + sys.argv[0] + """
+        -- there are NO argvuments""")
+   sys.exit(2)
+ 
+bpf_program = """
+#include <net/sock.h>  
+#include <net/inet_sock.h>  
+#include <linux/igmp.h>
+#include <linux/inetdevice.h>
+#include <linux/netdevice.h>
+#include <bcc/proto.h>  
+
+struct data_t {
+   u32 pid;
+   u16 add;
+   u16 dropped;
+   u32 multiaddr;
+   char name [16];
+   char task[100];
+};
+
+struct heard_data_t {
+   u16 type;
+   u32 group;
+};
+
+BPF_PERF_OUTPUT(add_event);
+
+int monitor_igmp_group_add(struct pt_regs *ctx, struct ip_mc_list *im) {
+  struct data_t data;
+  struct in_device *in_dev = im->interface;
+  struct net_device *net_dev = in_dev->dev;
+
+  data.add = 1;
+  data.dropped = 0;
+
+  data.multiaddr = im->multiaddr;
+
+  bpf_probe_read(&data.name, sizeof(data.name), net_dev->name);
+
+  data.pid = bpf_get_current_pid_tgid() >> 32;
+  bpf_get_current_comm(&data.task, sizeof(data.task));
+  
+  add_event.perf_submit (ctx, &data, sizeof(data)); 
+
+  return 0;
+}
+
+BPF_PERF_OUTPUT(dropped_event);
+
+int monitor_igmp_group_dropped(struct pt_regs *ctx, struct ip_mc_list *im) {
+  struct data_t data;
+  struct in_device *in_dev = im->interface;
+  struct net_device *net_dev = in_dev->dev;
+
+  data.add = 0;
+  data.dropped = 1;
+
+  data.multiaddr = im->multiaddr;
+
+  bpf_probe_read(&data.name, sizeof(data.name), net_dev->name);
+
+  data.pid = bpf_get_current_pid_tgid() >> 32;
+  bpf_get_current_comm(&data.task, sizeof(data.task));
+
+  dropped_event.perf_submit (ctx, &data, sizeof(data));
+
+  return 0;
+}
+
+BPF_PERF_OUTPUT(igmp_rcv_event);
+
+int monitor_igmp_rcv(struct pt_regs *ctx, struct sk_buff *skb) {
+  struct heard_data_t data;
+
+  struct igmphdr *ih = (struct igmphdr *) (skb->head + skb->transport_header);
+  data.type = ih->type;
+  data.group = ih->group;
+
+  if (data.type == 17)   
+     igmp_rcv_event.perf_submit (ctx, &data, sizeof(data));
+
+  return 0;
+}
+
+"""
+
+def convert_to_ipaddr_string (ipaddr):
+    o1 = o2 = o3 = o4 = ""
+    o4 = (ipaddr & 0xFF000000)>> 24
+    o3 = (ipaddr & 0x00FF0000) >> 16
+    o2 = (ipaddr & 0x0000FF00) >> 8
+    o1 = ipaddr & 0x000000FF
+    return ("{0}.{1}.{2}.{3}".format(o1, o2, o3, o4))
+
+def print_add_data(cpu, data, size):
+    event = bpf["add_event"].event(data)
+    print("{0} igmp_group_added called by PID: {1} CMD: {2} for {3} on {4}".format(strftime("%Y-%m-%d_%H:%M:%S UTC%z"), event.pid,
+        event.task.decode('utf-8', 'replace'), convert_to_ipaddr_string(event.multiaddr), event.name.decode('utf-8', 'replace')))
+
+def print_dropped_data(cpy, data, szie):
+    event =  bpf["dropped_event"].event(data)
+    print("{0} igmp_group_dropped called by PID: {1} CMD: {2} for {3} on {4}".format(strftime("%Y-%m-%d_%H:%M:%S UTC%z"), event.pid,
+        event.task.decode('utf-8', 'replace'), convert_to_ipaddr_string(event.multiaddr), event.name.decode('utf-8', 'replace')))
+
+def print_query_data(cpy, data, size):
+    event =  bpf["igmp_rcv_event"].event(data)
+    if event.type == 17:
+        print ("{0} IGMP query for group {1} received".format(strftime("%Y-%m-%d_%H:%M:%S UTC%z"),
+            convert_to_ipaddr_string(event.group)))
+
+bpf = BPF(text=bpf_program)
+
+bpf.attach_kprobe(event="igmp_group_added", fn_name="monitor_igmp_group_add")
+bpf.attach_kprobe(event="igmp_group_dropped", fn_name="monitor_igmp_group_dropped")
+bpf.attach_kprobe(event="igmp_rcv", fn_name="monitor_igmp_rcv")
+
+bpf["add_event"].open_perf_buffer(print_add_data, page_cnt=64)
+bpf["dropped_event"].open_perf_buffer(print_dropped_data, page_cnt=64)
+bpf["igmp_rcv_event"].open_perf_buffer(print_query_data, page_cnt=64)
+
+print ("Monitoring IGMP")
+
+while True:
+    try:
+        bpf.perf_buffer_poll ()
+    except ValueError:
+        continue
+    except KeyboardInterrupt:
+        break
+

@@ -1,0 +1,47 @@
+#!/usr/bin/stap
+
+/**
+  * tcp-sock-rwin.stp - returns the receive window of a socket
+  * 
+  * define local port to select traffic, requires guru mode
+  *
+Probing started...
+Thu Jul  3 04:45:12 2014; sshd(21924) returning tcp_transmit_skb
+rcvbuf = 87380   sk_rmem_alloc.counter = 0   rcv_wnd = 33728
+window is 33728
+^C
+Probing stopped.
+  *
+  */
+
+%{
+#include <linux/version.h>
+#include <net/sock.h>
+#include <net/tcp.h>
+#include <net/ip.h>
+#include <linux/skbuff.h>
+%}
+
+probe begin { printf ("Probing started...\n") }
+probe end { printf("Probing stopped.\n") }
+
+function tcp_get_info_rwnd:long(sock:long)
+%{ /* pure */
+        struct sock *sk = (struct sock *)(long) STAP_ARG_sock;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,10)
+        struct tcp_opt *tp = tcp_sk(sk);
+#else
+        struct tcp_sock *tp = tcp_sk(sk);
+#endif
+        STAP_RETVALUE = (int64_t) kread(&(tp->rcv_wnd));
+        CATCH_DEREF_FAULT();
+%}
+
+probe kernel.function("__tcp_select_window").return {
+    if (inet_get_local_port ($sk) == 22) {
+        printf("%s; %s(%d) returning %s\n", ctime(gettimeofday_s()), execname(), pid(), probefunc())
+        printf ("rcvbuf = %d   sk_rmem_alloc.counter = %d   rcv_wnd = %d\n", $sk->sk_rcvbuf, $sk->sk_rmem_alloc->counter, tcp_get_info_rwnd($sk))
+        printf ("window is %d\n", $return)
+    }
+}
+

@@ -1,0 +1,78 @@
+# vxlan.stp v1.1
+
+%{
+#include <linux/version.h>
+#include <net/sock.h>
+#include <net/tcp.h>
+#include <net/ip.h>
+#include <linux/skbuff.h>
+%}
+
+function get_ip_protocol:long (skb_param:long) %{
+  struct iphdr *iph;
+  long protocol;
+  iph=ip_hdr((struct sk_buff*)STAP_ARG_skb_param);
+  protocol=(long)iph->protocol;
+  STAP_RETVALUE = protocol;
+%}
+
+
+#!/usr/bin/stap
+# BEGIN vxlan.stp
+
+probe begin { printf("SystemTap started %s ...\n", ctime(gettimeofday_s())) }
+probe end   { printf("SystemTap stopped %s.\n", ctime(gettimeofday_s())) }
+
+probe tx_dropped = module("vxlan").statement("arp_reduce@drivers/net/vxlan.c+12"),
+                   module("vxlan").statement("vxlan_xmit@drivers/net/vxlan.c+64"),
+                   module("vxlan").statement("vxlan_xmit_one@drivers/net/vxlan.c+27"),
+                   module("vxlan").statement("vxlan_xmit_one@drivers/net/vxlan.c+60") {}
+
+probe tx_dropped {
+        time = gettimeofday_us()
+        printf("%lu.%06lu: ", time/1000000, time%1000000)
+
+        srcip = ip_ntop(ntohl(ipmib_local_addr($skb, 1)))
+        dstip = ip_ntop(ntohl(ipmib_local_addr($skb, 0)))
+        printf("%s: %s %s -> %s\n", ppfunc(), kernel_string($dev->name), srcip, dstip)
+}
+
+probe module("vxlan").function("__vxlan_find_mac").return {
+        if (!$return) {
+                time = gettimeofday_us()
+                printf("%lu.%06lu: ", time/1000000, time%1000000)
+
+#               emac = @entry($mac)
+#               macaddr = sprintf("%02x:%02x:%02x:%02x:%02x:%02x",
+#                                 emac[0], emac[1], emac[2],
+#                                 emac[3], emac[4], emac[5])
+#               printf("%s returned NULL: mac: %s, vni: 0x%x\n", ppfunc(), macaddr, @entry($vni))
+#
+                printf("%s returned NULL: mac: 0x%x, vni: 0x%x\n", ppfunc(), @entry($mac), @entry($vni))
+        }
+}
+
+probe kernel.function("ip_local_out_sk").return,
+      kernel.function("sch_direct_xmit").return, 
+      kernel.function("__ip_local_out").return, 
+      kernel.function("ip_fragment").return, 
+      kernel.function("ip_forward").return, 
+      kernel.function("ip_queue_xmit").return {
+
+protocol = get_ip_protocol($skb);
+if ($return != 0) {
+	udphdr = __get_skb_tcphdr(@entry($skb));
+	if (udphdr != 0) {
+			dport = __tcp_skb_dport(udphdr);
+			sport = __tcp_skb_sport(udphdr);
+	}
+        time = gettimeofday_us()
+        printf("%lu.%06lu: ", time/1000000, time%1000000)
+
+        srcip = ip_ntop(ntohl(ipmib_local_addr(@entry($skb), 1)))
+        dstip = ip_ntop(ntohl(ipmib_local_addr(@entry($skb), 0)))
+        printf("%s: %s -> %s ret=%d sport = %d dport = %d\n", ppfunc(), srcip, dstip, dport, sport, $return)
+
+}
+}
+# END vxlan.stp

@@ -1,0 +1,277 @@
+#!/usr/bin/stap -g
+# tcp_tx.stap v1.3
+# stap -g tcp_tx.stap localIP remoteIP remotePort
+
+%{
+#include <linux/version.h>
+#include <net/sock.h>
+#include <net/tcp.h>
+#include <net/ip.h>
+#include <linux/skbuff.h>
+%}
+
+function get_ip_protocol:long (skb_param:long) %{
+  struct iphdr *iph;
+  long protocol;
+   iph=ip_hdr((struct sk_buff*)STAP_ARG_skb_param);
+  protocol=(long)iph->protocol;
+  STAP_RETURN(protocol);
+%}
+
+function get_tcp_total_retrans:long(sock:long)
+%{ /* pure */
+        struct sock *sk = (struct sock *)(long) STAP_ARG_sock;
+        struct tcp_sock *tp = tcp_sk(sk);
+        STAP_RETVALUE = 
+             kread(&(tp->total_retrans));
+        CATCH_DEREF_FAULT();
+%}
+
+function tcp_get_info_rwnd:long(sock:long)
+%{ /* pure */
+    struct sock *sk = (struct sock *)(long) STAP_ARG_sock;
+    struct tcp_sock *tp = tcp_sk(sk);
+    STAP_RETVALUE = (int64_t) kread(&(tp->rcv_wnd));
+    CATCH_DEREF_FAULT();
+%}
+
+function get_sip:long(sock:long)
+%{ /* pure */
+    struct sock *sk = (struct sock *)(long) STAP_ARG_sock;
+    struct tcp_sock *tp = tcp_sk(sk);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,38)
+/* upstream commit 68835aba */
+    STAP_RETVALUE = 0xFFFFFFFF & htonl (kread(&(tp->inet_conn.icsk_inet.inet_rcv_saddr)));
+#else
+    STAP_RETVALUE = 0xFFFFFFFF & htonl (kread(&(tp->inet_conn.icsk_inet.saddr)));
+#endif
+    CATCH_DEREF_FAULT();
+%}
+
+function get_dip:long(sock:long)
+%{ /* pure */
+    struct sock *sk = (struct sock *)(long) STAP_ARG_sock;
+    struct tcp_sock *tp = tcp_sk(sk);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,38)
+/* upstream commit 68835aba */
+    STAP_RETVALUE = 0xFFFFFFFF & htonl (kread(&(tp->inet_conn.icsk_inet.inet_daddr)));
+#else
+    STAP_RETVALUE = 0xFFFFFFFF & htonl (kread(&(tp->inet_conn.icsk_inet.daddr)));
+#endif
+    CATCH_DEREF_FAULT();
+%}
+
+function get_sport:long(sock:long)
+%{ /* pure */
+    struct sock *sk = (struct sock *)(long) STAP_ARG_sock;
+    struct tcp_sock *tp = tcp_sk(sk);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,33)
+/* upstream commit c720c7e8 */
+    STAP_RETVALUE = 0xFFFF & htons (kread(&(tp->inet_conn.icsk_inet.inet_sport)));
+#else
+    STAP_RETVALUE = 0xFFFF & htons (kread(&(tp->inet_conn.icsk_inet.sport)));
+#endif
+    CATCH_DEREF_FAULT();
+%}
+
+function get_dport:long(sock:long)
+%{ /* pure */
+    struct sock *sk = (struct sock *)(long) STAP_ARG_sock;
+    struct tcp_sock *tp = tcp_sk(sk);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,33)
+/* upstream commit c720c7e8 */
+    STAP_RETVALUE = 0xFFFF & htons (kread(&(tp->inet_conn.icsk_inet.inet_dport)));
+#else
+    STAP_RETVALUE = 0xFFFF & htons (kread(&(tp->inet_conn.icsk_inet.dport)));
+#endif
+    CATCH_DEREF_FAULT();
+%}
+
+function get_rcvq_space:long(sock:long)
+%{ /* pure */
+    struct sock *sk = (struct sock *)(long) STAP_ARG_sock;
+    struct tcp_sock *tp = tcp_sk(sk);
+    STAP_RETVALUE = (int64_t) kread(&(tp->rcvq_space.space));
+    CATCH_DEREF_FAULT();
+%}
+
+function get_rcv_ssthresh:long(sock:long)
+%{ /* pure */
+    struct sock *sk = (struct sock *)(long) STAP_ARG_sock;
+    struct tcp_sock *tp = tcp_sk(sk);
+    STAP_RETVALUE = (int64_t) kread(&(tp->rcv_ssthresh));
+    CATCH_DEREF_FAULT();
+%}
+
+function get_daddr:long(sockb:long)
+%{ /* pure */
+        struct sk_buff *skb = (struct sk_buff *)(long) STAP_ARG_sockb;
+        struct iphdr *iph = ip_hdr(skb);
+        STAP_RETVALUE =  0xFFFFFFFF & (kread(&(iph->daddr)));
+        CATCH_DEREF_FAULT();
+%}
+
+function get_saddr:long(sockb:long)
+%{ /* pure */
+        struct sk_buff *skb = (struct sk_buff *)(long) STAP_ARG_sockb;
+        struct iphdr *iph = ip_hdr(skb);
+        STAP_RETVALUE =  0xFFFFFFFF & (kread(&(iph->saddr)));
+        CATCH_DEREF_FAULT();
+%}
+
+function pton:long(str:string)
+%{
+    unsigned v = 0;
+    int i;
+    const char * start;
+
+    start = STAP_ARG_str;
+    for (i = 0; i < 4; i++) {
+        char c;
+        int n = 0;
+        while (1) {
+            c = * start;
+            start++;
+            if (c >= '0' && c <= '9') {
+                n *= 10;
+                n += c - '0';
+            } else if ((i < 3 && c == '.') || i == 3) {
+                break;
+            }
+        }
+        v *= 256;
+        v += n;
+    }
+    STAP_RETVALUE = v;
+%}
+
+global targetIP
+global destIP_arg
+global targetPort
+global count = 0
+global count1 = 0
+global count2 = 0
+global count3 = 0
+
+probe begin {
+     targetIP = htonl (pton (@1))
+     destIP_arg = htonl (pton (@2))
+     targetPort = strtol (@3, 10)
+
+    printf ("Probing started...\n")
+}
+
+probe end { printf("Probing stopped.\n") }
+
+probe kernel.function("tcp_transmit_skb").return,
+      kernel.function("tcp_write_xmit").return
+{
+srcIP = htonl(get_sip($sk))
+destIP = htonl(get_dip($sk))
+destPort = get_dport ($sk)
+
+	if ((targetIP == srcIP && destIP_arg == destIP && targetPort == destPort)) {
+        now = gettimeofday_ns()
+        printf("%s (+%9dns) %s(%d) %s sk=%x SADDR=%s:%d DADDR=%s:%d "
+                "rcvbuf=%d sk_send_queue.qlen=%d, sk_wmem_alloc=%d rcv_wnd=%d "
+                "rcvq_space=%d rcv_ssthresh=%d total_retrans:%d return=%d\n", 
+                ctime(now / 1000000000), (now % 1000000000), execname(), 
+                pid(), ppfunc(), $sk, format_ipaddr (srcIP, 2), get_sport($sk)
+		,format_ipaddr (destIP, 2), 
+                get_dport($sk), $sk->sk_rcvbuf, $sk->sk_write_queue->qlen, $sk->sk_wmem_alloc->counter,  
+                tcp_get_info_rwnd($sk), get_rcvq_space($sk), 
+                get_rcv_ssthresh($sk), get_tcp_total_retrans($sk), $return)
+			if (count < 200) {
+                		print_backtrace();
+				count++;
+			}
+    }
+}
+
+probe kernel.function("tcp_send_ack").call,
+      kernel.function("tcp_enter_cwr").call,
+      kernel.function("tcp_enter_loss").call,
+      kernel.function("tcp_retransmit_timer").call,
+      kernel.function("tcp_send_fin").call
+{
+srcIP = htonl(get_sip($sk))
+destIP = htonl(get_dip($sk))
+destPort = get_dport ($sk)
+
+	if ((targetIP == srcIP && destIP_arg == destIP && targetPort == destPort)) {
+        now = gettimeofday_ns()
+        printf("%s (+%9dns) %s(%d) %s sk=%x SADDR=%s:%d DADDR=%s:%d "
+                "rcvbuf=%d sk_send_queue.qlen=%d sk_wmem_alloc=%d rcv_wnd=%d "
+                "rcvq_space=%d rcv_ssthresh=%d total_retrans:%d\n", 
+                ctime(now / 1000000000), (now % 1000000000), execname(), 
+                pid(), ppfunc(), $sk, format_ipaddr (srcIP, 2), get_sport($sk)
+		,format_ipaddr (destIP, 2), 
+                get_dport($sk), $sk->sk_rcvbuf, $sk->sk_write_queue->qlen, $sk->sk_wmem_alloc->counter,  
+                tcp_get_info_rwnd($sk), get_rcvq_space($sk), 
+                get_rcv_ssthresh($sk), get_tcp_total_retrans($sk))
+			if (count1 < 200) {
+                		print_backtrace();
+				count1++;
+			}
+		}
+}
+
+// No more sk to go on use skb instead
+
+probe kernel.function("dev_hard_start_xmit").return,
+      kernel.function("ip_local_out_sk").return, 
+      kernel.function("sch_direct_xmit").return, 
+      kernel.function("__ip_local_out").return, 
+      kernel.function("ip_queue_xmit").return {
+srcIP = get_saddr($skb)
+destIP = get_daddr($skb)
+protocol = get_ip_protocol($skb)
+if (protocol == 6) {
+	tcphdr = __get_skb_tcphdr($skb);
+	dport = 0;
+	if (tcphdr != 0) {
+			dport = __tcp_skb_dport(tcphdr);
+			sport = __tcp_skb_sport(tcphdr);
+	}
+}
+	if ((targetIP == srcIP && destIP_arg == destIP && targetPort == dport)) {
+	printf("%s, %lu, probe:%s PID:%d, calling:%s args %s " 
+		"return=%d dport=%d sport=%d srcip = %s destIP=%s\n", 
+		ctime(gettimeofday_s()), gettimeofday_ns(), ppfunc(), 
+		pid(), probefunc(), $$vars, $return, dport, sport, 
+		format_ipaddr (srcIP, 2), format_ipaddr (destIP, 2));
+		if (count2 < 200) {
+               		print_backtrace();
+			count2++;
+		}
+	}
+}
+
+probe module("tg3").function("tg3_start_xmit").return,
+      kernel.function("nf_iterate").return
+{
+srcIP = get_saddr($skb)
+destIP = get_daddr($skb)
+protocol = get_ip_protocol($skb)
+if (protocol == 6) {
+	tcphdr = __get_skb_tcphdr($skb);
+	dport = 0;
+	if (tcphdr != 0) {
+			dport = __tcp_skb_dport(tcphdr);
+			sport = __tcp_skb_sport(tcphdr);
+	}
+}
+	if ((targetIP == srcIP && destIP_arg == destIP && targetPort == dport)) {
+	printf("%s, %lu, probe:%s PID:%d, calling:%s args %s " 
+		"dport=%d sport=%d srcip = %s destIP=%s return=%d\n", 
+		ctime(gettimeofday_s()), gettimeofday_ns(), ppfunc(), 
+		pid(), probefunc(), $$vars, dport, sport, 
+		format_ipaddr (srcIP, 2), format_ipaddr (destIP, 2), $return);
+		if (count3 < 200) {
+               		print_backtrace();
+			count3++;
+		}
+	}
+}
+
+# tcp_tx.stap Ends here

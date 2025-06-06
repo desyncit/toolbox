@@ -1,0 +1,23 @@
+#!/usr/bin/stap
+# Usage : stap bt.stp
+# Checks which process opens a socket with BlueTooth address family
+# To troubleshoot https://access.redhat.com/solutions/1518873
+
+probe begin { printf ("Probing started...\n") }
+probe end { printf("Probing stopped.\n") }
+
+probe kernel.function("sock_register").call,
+      kernel.function("sock_unregister").call
+{
+        printf("%s: %s called by %s(%d) with parent %s(%d)\n", ctime(gettimeofday_s()), caller(), execname(), pid(), pexecname(), ppid())
+}
+
+
+probe kernel.function("__sock_create").call
+{
+        if ($family == 31 || $family == 30 || $family == 36) 
+        {
+                printf("%s: %s called to open %d family socket by %s(%d) with parent %s(%d)\n", ctime(gettimeofday_s()), caller(), $family, execname(), pid(), pexecname(), ppid());
+        }
+}
+

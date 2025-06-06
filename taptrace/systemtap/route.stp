@@ -1,0 +1,11 @@
+#!/usr/bin/stap
+# Usage: stap route.stp
+# Tells who is responsible for adding or changing a route. Tested on RHEL7.
+
+probe begin { printf ("Probing started...\n") }
+probe end { printf("Probing stopped.\n") }
+
+probe kernel.function("inet_rtm_newroute").call {
+    printf("%s: %s called by process %s(%d) parent %s(%d).\n", ctime(gettimeofday_s()), ppfunc(), execname(), pid(), pexecname(), ppid())
+}
+

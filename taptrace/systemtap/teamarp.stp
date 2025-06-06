@@ -1,0 +1,29 @@
+#!/usr/bin/stap --all-modules
+# 
+# Checks when a team interface notifies peers of MAC change with ARP, and when its MAC address actually changes
+#
+# https://access.redhat.com/solutions/5703011
+# https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/commit/?id=5ed9dc99107144f83b6c1bb52a69b58875baf540
+# https://bugzilla.redhat.com/show_bug.cgi?id=1651933
+
+probe begin { printf ("Probing started...\n") }
+probe end { printf("Probing stopped.\n") }
+
+probe kernel.function("inetdev_send_gratuitous_arp")
+{
+    printf("%s +%lu - %s - %s\n", ctime(gettimeofday_s()), gettimeofday_ns()%1000000000, kernel_string($dev->name), ppfunc())
+}
+
+probe kernel.function("arp_send")
+{
+    printf("%s +%lu - %s - %s\n", ctime(gettimeofday_s()), gettimeofday_ns()%1000000000, kernel_string($dev->name), ppfunc() )
+}
+
+probe module("team").function("team_notify_peers_work")
+{
+    printf("%s +%lu - %s\n", ctime(gettimeofday_s()), gettimeofday_ns()%1000000000, ppfunc())
+}
+
+probe netdev.change_mac {
+        printf("%s +%lu - %s - MAC changing from %s to %s\n", ctime(gettimeofday_s()), gettimeofday_ns()%1000000000, dev_name, old_mac, new_mac)
+}

@@ -1,0 +1,13 @@
+#!/usr/bin/stap
+# Usage : stap --all-modules arp.stp
+# Prints when the kernel sends an ARP
+
+probe begin { printf ("Probing started...\n") }
+probe end { printf("Probing stopped.\n") }
+
+global AF_INET = 2;
+
+probe kernel.function("arp_send_dst").call {
+        printf("%s: sending ARP from %s to %s on dev %s.\n", ctime(gettimeofday_s()), format_ipaddr($src_ip, AF_INET), format_ipaddr($dest_ip, AF_INET), kernel_string($dev->name));
+        print_backtrace();
+}

@@ -1,0 +1,10 @@
+#!/usr/bin/stap
+# Usage: stap -d igb igb-get-status-print.stp
+
+probe begin { printf("SystemTap started...\n") }
+probe end   { printf("SystemTap stopped.\n") }
+
+probe module("igb").function("igb_get_settings").return {
+    printf("%s: igb_get_settings status: %d\n", ctime(gettimeofday_s()), $return)
+}
+

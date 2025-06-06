@@ -1,0 +1,3 @@
+FROM sflow/sflow-rt
+ENV RTMEM=2G 
+FROM sflow/prometheus

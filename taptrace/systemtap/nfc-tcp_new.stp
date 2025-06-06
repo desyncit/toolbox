@@ -1,0 +1,33 @@
+#!/usr/bin/stap
+# BEGIN nfc-tcp_new.stp
+#  This is an example of how to get data from a local during a 
+#  statement probe when the data needed exists only in a register
+#  at the time of the probe
+# 
+# Author: cjt@redhat.com
+#
+
+probe begin { printf("SystemTap started %s ...\n", ctime(gettimeofday_s())) }
+probe end   { printf("SystemTap stopped %s.\n", ctime(gettimeofday_s())) }
+
+probe module("nf_conntrack").statement("*@net/netfilter/nf_conntrack_proto_tcp.c:1125"){
+# 
+# At this point r15 contains the th value we need but stap couldn't figure that out
+#
+# 0xffffffffc0653313 <tcp_new+115>:       mov    %r15,%rdi
+# 0xffffffffc0653316 <tcp_new+118>:       callq  0xffffffffc0652560 <get_conntrack_index>
+# 0xffffffffc065331b <tcp_new+123>:       mov    %eax,%eax
+# 0xffffffffc065331d <tcp_new+125>:       lea    (%rax,%rax,4),%rax
+# 0xffffffffc0653321 <tcp_new+129>:       movzbl -0x3f9a5e60(%rax,%rax,1),%eax
+# /usr/src/debug/kernel-3.10.0-862.14.4.el7/linux-3.10.0-862.14.4.el7.x86_64/net/netfilter/nf_conntrack_proto_tcp.c: 1124
+# 0xffffffffc0653329 <tcp_new+137>:       cmp    $0x9,%eax
+# 0xffffffffc065332c <tcp_new+140>:       ja     0xffffffffc0653370 <tcp_new+208>
+#
+        th = register("r15");
+	time = gettimeofday_us()
+        printf("%lu.%06lu: ", time/1000000, time%1000000)
+	printf("new_stat: %d srcport: %d  dstport: %d rst:%d syn:%d fin:%d ack:%d\n",
+			$new_state, ntohs(@cast(th, "tcphdr")->source), ntohs(@cast(th, "tcphdr")->dest), 
+			(@cast(th, "tcphdr")->rst)?1:0, (@cast(th, "tcphdr")->syn)?1:0, 
+			(@cast(th, "tcphdr")->fin)?1:0, (@cast(th, "tcphdr")->ack)?1:0);
+}

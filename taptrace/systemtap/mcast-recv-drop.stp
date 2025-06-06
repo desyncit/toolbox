@@ -1,0 +1,152 @@
+#!/usr/bin/stap -g --all-modules
+#
+# Example to isolate multiple "goto" statements leading to one kfree_skb()
+#
+# System cannot receive multicast on one interface sent by the same system on another interface
+# https://access.redhat.com/solutions/6973124
+#
+# Line numbers correspond to 4.18.0-372.19.1.el8_6.x86_64
+# 
+# To trigger this script, craft a UDP packet on MYPORT from outside, with one of your own IP
+# addresses as the source IP address. The packet will be denied unless you set the per-
+# interface tunable "net.ipv4.conf.DEVNAME.accept_local = 1"
+
+%{
+#include <linux/version.h>
+#include <net/sock.h>
+#include <net/tcp.h>
+#include <net/udp.h>
+#include <net/ip.h>
+#include <linux/skbuff.h>
+#include <linux/types.h>
+#include <linux/in6.h>
+%}
+
+function __get_skb_udphdr:long (skb:long) { return __get_skb_tcphdr(skb) }
+function __udp_skb_dport(udphdr) { return ntohs(@cast(udphdr, "udphdr")->dest) }
+function __udp_skb_sport(udphdr) { return ntohs(@cast(udphdr, "udphdr")->source) }
+
+#global AF_INET = 2;
+#global AF_INET6 = 10;
+
+global MYPORT = 9001
+
+probe begin { printf ("Probing started...\n") }
+probe end { printf("Probing stopped.\n") }
+
+/* ip_rcv_finish */
+probe kernel.statement("*@net/ipv4/ip_input.c:341")
+{
+	try {
+		udphdr = __get_skb_udphdr(@choose_defined($skb, kernel_pointer($skb)));
+		sport = __udp_skb_dport(udphdr);
+		dport = __udp_skb_sport(udphdr);
+	} catch { };
+
+	if (dport == MYPORT || sport == MYPORT) {
+		printf("hit 1\n");
+	}
+}
+
+/* -------------------------------------------------------------------------- */
+
+probe kernel.statement("*@net/ipv4/ip_input.c:355")
+{
+	try {
+		udphdr = __get_skb_udphdr(@choose_defined($skb, kernel_pointer($skb)));
+		sport = __udp_skb_dport(udphdr);
+		dport = __udp_skb_sport(udphdr);
+	} catch { };
+
+	if (dport == MYPORT || sport == MYPORT) {
+		printf("hit 2\n");
+	}
+}
+
+/* ip_mc_validate_source */
+probe kernel.statement("*@net/ipv4/route.c:1672")
+{
+	try {
+		udphdr = __get_skb_udphdr(@choose_defined($skb, kernel_pointer($skb)));
+		sport = __udp_skb_dport(udphdr);
+		dport = __udp_skb_sport(udphdr);
+	} catch { };
+
+	if (dport == MYPORT || sport == MYPORT) {
+		printf("hit 2-1\n");
+	}
+}
+
+probe kernel.statement("*@net/ipv4/route.c:1675")
+{
+	try {
+		udphdr = __get_skb_udphdr(@choose_defined($skb, kernel_pointer($skb)));
+		sport = __udp_skb_dport(udphdr);
+		dport = __udp_skb_sport(udphdr);
+	} catch { };
+
+	if (dport == MYPORT || sport == MYPORT) {
+		printf("hit 2-2\n");
+	}
+}
+
+probe kernel.statement("*@net/ipv4/route.c:1679")
+{
+	try {
+		udphdr = __get_skb_udphdr(@choose_defined($skb, kernel_pointer($skb)));
+		sport = __udp_skb_dport(udphdr);
+		dport = __udp_skb_sport(udphdr);
+	} catch { };
+
+	if (dport == MYPORT || sport == MYPORT) {
+		printf("hit 2-3\n");
+	}
+}
+probe kernel.statement("*@net/ipv4/route.c:1683")
+{
+	try {
+		udphdr = __get_skb_udphdr(@choose_defined($skb, kernel_pointer($skb)));
+		sport = __udp_skb_dport(udphdr);
+		dport = __udp_skb_sport(udphdr);
+	} catch { };
+
+	if (dport == MYPORT || sport == MYPORT) {
+		printf("hit 2-4\n");
+	}
+}
+probe kernel.statement("*@net/ipv4/route.c:1688")
+{
+	try {
+		udphdr = __get_skb_udphdr(@choose_defined($skb, kernel_pointer($skb)));
+		sport = __udp_skb_dport(udphdr);
+		dport = __udp_skb_sport(udphdr);
+	} catch { };
+
+	if (dport == MYPORT || sport == MYPORT) {
+		printf("hit 2-5\n");
+	}
+}
+
+probe kernel.function("ip_mc_validate_source").return,
+      kernel.function("fib_validate_source").return,
+      kernel.function("__fib_validate_source").return,
+      kernel.function("inet_lookup_ifaddr_rcu").return
+{
+	printf("%s return %d\n", ppfunc(), $return);
+}
+
+/* -------------------------------------------------------------------------- */
+
+probe kernel.statement("*@net/ipv4/ip_input.c:398")
+{
+	try {
+		udphdr = __get_skb_udphdr(@choose_defined($skb, kernel_pointer($skb)));
+		sport = __udp_skb_dport(udphdr);
+		dport = __udp_skb_sport(udphdr);
+	} catch { };
+
+	if (dport == MYPORT || sport == MYPORT) {
+		printf("hit 3\n");
+	}
+}
+

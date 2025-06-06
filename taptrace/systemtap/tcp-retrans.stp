@@ -1,0 +1,30 @@
+#!/usr/bin/stap
+# Usage : stap -g retrans.stp
+# Monitors retransmission of TCP segments
+%{
+#include <linux/version.h>
+#include <net/sock.h>
+#include <net/tcp.h>
+#include <net/ip.h>
+#include <linux/skbuff.h>
+%}
+
+function tcp_get_retrans_stamp:long(sock:long)
+%{ /* pure */
+        struct sock *sk = (struct sock *)(long) STAP_ARG_sock;
+        struct tcp_sock *tp = tcp_sk(sk);
+        STAP_RETVALUE = (int32_t) kread(&(tp->retrans_stamp));
+        CATCH_DEREF_FAULT();
+%}
+
+probe begin { printf ("Probing started...\n") }
+
+probe end { printf("Probing stopped.\n") }
+
+probe kernel.function("tcp_retransmit_skb").call {
+        printf("tcp_retransmit_skb.call  Time: %d  Port: %d  retrans_stamp: %d\n", gettimeofday_ms(), inet_get_local_port($sk), tcp_get_retrans_stamp($sk))
+}
+probe kernel.function("tcp_retransmit_skb").return {
+        printf(" tcp_retransmit_skb.return  Time: %d  Port: %d  retrans_stamp: %d\n", gettimeofday_ms(), inet_get_local_port($sk), tcp_get_retrans_stamp($sk))
+}
+

@@ -1,0 +1,17 @@
+#!/bin/bash
+
+# || = or
+# && = and
+# redirect stderr 2> to trashcan /dev/null
+# && will only display if the preceeding comand suceeds. 
+# Using the || operator is used as an either or operator. 
+# execution operators example
+
+echo "Enter a number between 1 and 5"
+read n
+
+if [ "$n" -eq "1" ] || [ "$n" -eq "3" ] || [ "$n" -eq "5" ]; then
+	echo "You entered the ODD value"
+else
+	echo "You entered a value of $n"
+fi

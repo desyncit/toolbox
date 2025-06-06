@@ -1,0 +1,141 @@
+*DISCLAIMER*
+===================================================
+Below is an example use cases or a proof of concept, please consult documentation provided to ensure through understanding of vrrp and keepalived. I am providing the below as 
+examples, not production level ready examples. Through testing should be done before implementing any of the below to ensure proper compatibility with your infrastructure. 
+MAINTAINER: jherron@redhat.com
+===================================================
+
+FIREWALLD WITH IPSETS FOR KEEPALIVED
+===================================================
+EXAMPLE STEPS ON THE KEEPALIVED NODES
+===================================================
+# This value needs to be placed on both MASTER AND BACKUP nodes: 
+# place in the sysctl.conf
+~] echo "net.ipv4.ip_nonlocal_bind=1" >> /etc/sysctl.conf
+~] echo "net.ipv4.ip_forward = 1" >> /etc/sysctl.conf
+
+# Apply now
+~] sysctl --system 
+
+# Allow vrrp through the local firewall
+~] firewall-cmd --add-rich-rule='rule protocol value="vrrp" accept' --permanent
+
+# Routing to the backend
+# Use multi-port services (HTTP and HTTPS),which the firewall marks to bundle together different, but related protocols, are required.
+~] firewall-cmd --perm --direct --add-rule ipv4 mangle PREROUTING 0 tcp -d <vip(s)> -m multiport --dport 80,443 -j MARK --set-mark 80
+
+# if you DO NOT want to use ipset lists you will need to configure the above line for every single vip address
+
+===============
+# IPSETS
+===============
+# You can view the hash:types available for ipset list as shown below 
+# https://access.redhat.com/documentation/en-us/red_hat_enterprise_linux/7/html/security_guide/sec-setting_and_controlling_ip_sets_using_firewalld 
+
+~] firewall-cmd --get-ipset-types
+
+  hash:ip hash:ip,mark hash:ip,port hash:ip,port,ip hash:ip,port,net hash:mac 
+  hash:net hash:net,iface hash:net,net hash:net,port hash:net,port,net
+
+# Create the ipset list
+firewall-cmd --permanent --new-ipset=<name> --type=<hash:type>
+
+# Add all the vips to a file then read from file:
+firewall-cmd --permanent --ipset=<name-of-list> --add-entries-from-file=<file>
+
+# then add the rule below to read from list to use multi-port services (HTTP and HTTPS),which the firewall marks to bundle together different but related protocols 
+# are required.
+
+~] firewall-cmd --perm --direct --add-rule ipv4 mangle PREROUTING 0 -p tcp --match-set <ipset-list-name> dst -m multiport --dport 80,443 -j MARK --set-mark 80
+
+=========================================
+EXAMPLE STEPS ON THE BACKEND REAL SERVERS
+=========================================
+# Create a file with all the vips for keepalived
+
+~] firewall-cmd --permanent --ipset=<name-of-list> --add-entries-from-file=<file>
+
+# Verify all entries 
+~] firewall-cmd --permanent --ipset=<name-of-list> --get-entries
+
+# Allows real servers to be able to process packets destined for the VIP and port that they are given. 
+~] firewall-cmd --perm --direct --add-rule ipv4 nat PREROUTING 0 -p tcp -m multiport --dport 80,443 -m set --match-set <name-of-list> dst -j REDIRECT
+
+# Using firewalld you can use individual direct rules OR you can use ipset list to hold the ip addr values in conjunction with firewalld. Using ipset with firewalld
+# allows you to only have to edit the firewall ipset lists and not the rules themselves. 
+
+
+IPTABLES WITH IPSETS FOR KEEPALIVED
+===================================
+
+===================================================
+EXAMPLE STEPS ON THE KEEPALIVED NODES
+===================================================
+
+# install ipset 
+~ ] yum install ipset -y
+
+# remove firewalld and mask 
+
+~] yum remove firewall; systemctl mask firewalld; yum install iptables -y; systemctl enable --now iptables
+
+# CONFIGURE IPSET LIST
+
+# ensure kernel module is loaded in the kernel
+
+lsmod | grep ip_set
+
+# then create the ipset list with the appropiate hash (see ipset -h for all hash types)  
+
+ipset create myset hash:net or ipset -N myset nethash
+
+# Add the ips to the list 
+
+ipset add <set-name> <ip> 
+
+
+# Assigning firewall marks on both routers or KEEPALIVED NODES MASTER AND BACKUP, multi-port services (HTTP and HTTPS), 
+# firewall marks to bundle together different, but related protocols, are required.
+
+iptables -t mangle -A PREROUTING -p tcp -m set --match-set <set-name> <dst> -m multiport --dport 80,443 -j MARK --set-mark 80
+iptables -I INPUT -p vrrp -m comment --comment "VRRP" -j ACCEPT 
+
+echo "net.ipv4.ip_forward = 1" >> /etc/sysctl.conf
+echo "net.ipv4.ip_nonlocal_bind=1" >>/etc/sysctl.conf
+
+=========================================
+EXAMPLE STEPS ON THE BACKEND REAL SERVERS
+=========================================
+# install ipset
+~ ] yum install ipset -y
+
+# remove firewalld and mask
+
+~] yum remove firewall; systemctl mask firewalld; yum install iptables -y; systemctl enable --now iptables
+
+# CONFIGURE IPSET LIST
+# ensure kernel module is loaded in the kernel
+
+~] lsmod | grep ip_set
+
+# then create the ipset list with the appropiate hash (see ipset -h for all hash types)
+
+~] ipset create myset hash:net or ipset -N myset nethash
+
+# Add the ips to the list
+
+~] ipset add <set-name> <ip>
+
+~] iptables -t nat -A PREROUTING -p tcp -m set --match-set <set-name> dst -m multiport --dport 80,443 -j REDIRECT
+
+
+
+References
+http://www.keepalived.org/pdf/UserGuide.pdf
+https://access.redhat.com/documentation/en-US/Red_Hat_Enterprise_Linux/7/html-single/Load_Balancer_Administration/index.html
+
+
+
+
+
+

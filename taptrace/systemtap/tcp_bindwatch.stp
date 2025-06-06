@@ -1,0 +1,31 @@
+#!/usr/bin/stap
+
+# Watch for TCP sockets being bound to specific port.
+# If no argument is given, watch for any port.
+#
+# Examples:
+#	# stap bindwatch.stp 1234
+#	   UID              CMD    PID   PORT
+#	     0               nc  25407   1234
+#	     0               nc  25407   1234
+#	# stap bindwatch.stp
+#	   UID              CMD    PID   PORT
+#	     0            cupsd  25194    631
+#	     0            cupsd  25194    631
+#	     0         sendmail  25226     25
+#	     0         sendmail  25226     25
+#
+# MAINTAINER: adk@redhat.com
+# TODO: watch UDP ports as well
+
+probe begin {
+	printf("%6s %16s %6s %6s\n", "UID", "CMD", "PID", "PORT")
+}
+
+probe kernel.function("inet_csk_get_port")
+{
+%( $# > 0 %?
+	if ($snum == $1)
+%)
+	printf("%6d %16s %6d %6d\n", uid(), execname(), pid(), $snum)
+}

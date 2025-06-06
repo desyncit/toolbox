@@ -1,0 +1,70 @@
+#!/usr/bin/stap --all-modules
+# Usage : stap --all-modules set-mtu.stp
+# Monitor change of network device MTU
+
+probe begin { printf ("MTU monitoring started...\n"); }
+probe end { printf("MTU monitoring stopped.\n"); }
+
+// currently EL8 only. EL7 doesn't have "__dev_set_mtu" as a probe point
+
+// kernel.function("__dev_set_mtu").call $dev:struct net_device* $new_mtu:int $ops:struct net_device_ops const*
+probe kernel.function("__dev_set_mtu").call
+{
+    now = gettimeofday_ns();
+    printf ("%s (+%9d ns) %s(%d) %s changing %s MTU to %d\n",
+            ctime(now / 1000000000), (now % 1000000000), execname(), pid(), ppfunc(),
+            get_netdev_name($dev), $new_mtu);
+    print_backtrace();
+}
+
+// int (*ndo_change_mtu)(struct net_device *dev, int new_mtu);
+probe
+      // broadcom
+      module("tg3").function("tg3_change_mtu").call,
+      module("bnx2").function("bnx2_change_mtu").call,
+      module("bnx2x").function("bnx2x_change_mtu").call,
+      module("bnxt_en").function("bnxt_change_mtu").call,
+      // intel
+      module("e1000").function("e1000_change_mtu").call,
+      module("e1000e").function("e1000_change_mtu").call,
+      module("igb").function("igb_change_mtu").call,
+      module("igbvf").function("igbvf_change_mtu").call,
+      module("ixgbe").function("ixgbe_change_mtu").call,
+      module("ixgbevf").function("ixgbevf_change_mtu").call,
+      module("i40e").function("i40e_change_mtu").call,
+      module("iavf").function("iavf_change_mtu").call,
+      module("igc").function("igc_change_mtu").call,
+      module("ice").function("ice_change_mtu").call,
+      // other physical
+      module("8139cp").function("cp_change_mtu").call,
+      module("enic").function("enic_change_mtu").call,
+      module("hinic").function("hinic_change_mtu").call,
+      module("mlx4_en").function("mlx4_en_change_mtu").call,
+      module("mlx5_core").function("mlx5e_change_nic_mtu").call,
+      module("netxen_nic").function("netxen_nic_change_mtu").call,
+      module("qede").function("qede_change_mtu").call,
+      module("sfc").function("efx_change_mtu").call,
+      // virtual - hv_netvsc virtio don't exist, ibmveth probably inlined
+      module("8021q").function("vlan_dev_change_mtu").call,
+      module("bonding").function("bond_change_mtu").call,
+      module("bridge").function("br_change_mtu").call,
+      module("ena").function("ena_change_mtu").call,
+      module("geneve").function("geneve_change_mtu").call,
+      module("macvlan").function("macvlan_change_mtu").call,
+      module("team").function("team_change_mtu").call,
+      module("vxlan").function("vxlan_change_mtu").call,
+      module("vmxnet3").function("vmxnet3_change_mtu").call
+{
+    now = gettimeofday_ns();
+
+    printf ("%s (+%9d ns) %s(%d) %s changing %s MTU to %d\n",
+            ctime(now / 1000000000), (now % 1000000000), execname(), pid(), ppfunc(),
+            // not all functions use the parameter names $dev or #netdev,
+            // so access them via DWARF-less typed numbered parameters
+            get_netdev_name(pointer_arg(1)), uint_arg(2));
+    print_backtrace();
+}
+
+// TODO: is the return useful?
+
+// vim: expandtab filetype=c ts=4 sw=4 sts=4 expandtab :

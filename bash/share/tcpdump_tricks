@@ -1,0 +1,27 @@
++======================================================+
+| Cool tricks I have found via leveraging components   |
+| of linux and tcpdump 				       |
+|    				       		       |
+| Feel free to add to these examples if you            |
+| have any cool tricks combining different shells,     |
+| or different components of linux with tcpdump.       |
+|      						       |
+| MAINTAINER: jherron@redhat.com 		       |
++======================================================+
+
+/* Source: man 1 bash
+ * Leverages the combination of
+ * - Event Designator (!#) 
+ * - Word Designators (:2) 
+ * to read position 2 of the current line 
+ * and then append to the beginging the 
+ * pcap file
+*/
+
+  + tcpdump -i <interface> -w !#:2_$(hostname)_$(date "+%F-%M-%S-%Z").pcap
+  \
+   + Example output: 
+    ----------------
+    ]$ tcpdump -i eno1 -w !#:2_$(hostname)_$(date "+%F-%M-%S-%Z").pcap
+       OUTPUT:= tcpdump -i eno1  -w eno1_$(hostname)_$(date "+%F-%M-%S-%Z").pcap
+
