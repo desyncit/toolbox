@@ -1,0 +1,32 @@
+---
+ansible-navigator:
+  ansible:
+    config:
+      help: false
+      path: '~/.ansible/navigator/configs'
+  ansible-builder:
+    help: false
+    workdir: '~/.ansible/navigator/navigator/'
+  ansible-runner:
+    job-events: false
+  editor:
+    command: vim +{line_number} {filename}
+    console: true
+  enable-prompts: false
+  exec:
+    command: /bin/bash
+    shell: true
+  execution-environment:
+    container-engine: podman
+    enabled: true
+    image: 
+    pull:
+      policy: always
+  format: yaml
+  logging:
+    level: warning
+    append: true
+    file: '/tmp/ansible-navigator.log'
+  mode: stdout
+  playbook-artifact:
+    enable: false
