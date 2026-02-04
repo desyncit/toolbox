@@ -1,0 +1,72 @@
+---
+- hosts: localhost
+  connection: local
+  gather_facts: true
+
+  environment:
+    CONTROLLER_OAUTH_TOKEN: "{{ ansible_facts.controller_token.token }}"
+    CONTROLLER_HOST: "{{ controller.host }}"
+    CONTROLLER_VERIFY_SSL: "{{ controller.verify_ssl }}"
+
+  vars:
+    project:
+      name: Cloud Projects
+      organization: Default
+      description:
+      credentials:
+        
+      repo:
+        type: git
+        endpoint: https://gitlab.com/net-dev-net/lab.git
+        branch: main
+      credentials:
+        name: user01
+        kind:
+        
+    controller:
+      host: https://aap.irinet.net
+      verify_ssl: false
+    oauth:
+      username: !vault |
+                $ANSIBLE_VAULT;1.1;AES256
+                63633166393635373838383937396366363736393063373139376366323737613962633233373362
+                6332306537353538343939633264323432613739396461370a633136386639633365613161343866
+                62643265646132323635633161386565323162306461366238383230623433373363623230366535
+                6463313730653434630a383432656130626337393265383362303530643937393563316331613737
+                6463
+      password: !vault |
+                $ANSIBLE_VAULT;1.1;AES256
+                35323962346161623038663261363434316130353631346165393631646438613062363136653732
+                3233616335353537613032303661646261343061386438620a396132376133656133383265386134
+                30613134653336386461393831346134366236656162613136343938303632646630396432333433
+                3432316437323461370a366433366462633631616636353862336434613234346666396133363065
+                3163
+    
+  tasks:
+
+     - name: Create a project
+       block: 
+         - name: Create a new token
+           ansible.controller.token:
+             scope: "write"
+             state: "present"
+             aap_username: "{{ oauth.username }}"
+             aap_password: "{{ oauth.password }}"
+
+         - name: Check/Create project
+           ansible.controller.project:
+             name: "{{ project.name }}"
+             organization: "{{ project.organization }}"
+             scm_url: "{{ project.repo.endpoint }}"
+             scm_type: "{{ project.repo.type }}"
+             scm_branch: "{{ project.repo.branch }}"
+             scm_update_on_launch: true
+             scm_clean: true
+             state: present
+           register: project_metadata
+
+         - name: Create project resources
+           block:
+
+             - name: Create credentials type
+               
