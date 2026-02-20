@@ -1,5 +1,0 @@
-ESP_DIR="/efi/EFI/arch/"
-
-function build(){
-	/usr/local/bin/efisync $$ &
-}
