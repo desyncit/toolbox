@@ -1,6 +1,6 @@
 #!/bin/bash
 
-. /var/git/desyncit/toolbox/bash/include/s3errno.sh
+. ../include/s3errno.sh
 
 function getnooba(){
    local ARCH=amd64
